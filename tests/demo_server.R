@@ -53,7 +53,11 @@ timed("V N - Swim Lessons", 0, "08:00", "09:00")
 timed("K - Dentist", 0, "10:30", "11:15")
 timed("A - Preschool pickup", 0, "15:00", "15:15")
 allday("fam@group", "F - Grandma visiting", 1, 3)
-timed("V - Soccer practice", 1, "16:00", "17:15")
+invisible(add_event(fk$google, cfg, "family", list(
+  title = "Soccer practice", who = list("V"), date = format(today + 1),
+  start_time = "16:00", end_time = "17:15",
+  `repeat` = list(freq = "weekly", days = list(code_of(today + 1), code_of(today + 4)),
+                  ends = "after", count = 12, as = "series"))))
 timed("B - Hyrox class", 2, "06:00", "07:00")
 timed("N - Piano", 2, "15:30", "16:00")
 timed("B K - Date night", 3, "19:00", "22:00")

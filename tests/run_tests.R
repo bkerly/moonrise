@@ -462,6 +462,135 @@ test("writes: dinner set, change, clear", {
   expect_equal(length(dinner_titles()), 0)
 })
 
+# ---- Repeats ---------------------------------------------------------------
+
+test("repeat: dates for each kind of rule", {
+  d <- function(x) format(repeat_dates(clean_repeat(x, x$start)))
+  expect_equal(d(list(start = "2026-11-02", freq = "weekly", days = list("TU", "TH"),
+                      ends = "after", count = 5)),
+               c("2026-11-03", "2026-11-05", "2026-11-10", "2026-11-12", "2026-11-17"))
+  expect_equal(d(list(start = "2026-11-02", freq = "biweekly", days = list("MO", "WE"),
+                      ends = "on", until = "2026-12-02")),
+               c("2026-11-02", "2026-11-04", "2026-11-16", "2026-11-18", "2026-11-30", "2026-12-02"))
+  expect_equal(d(list(start = "2026-10-31", freq = "monthly_date", ends = "after", count = 3)),
+               c("2026-10-31", "2026-12-31", "2027-01-31"))           # skips short months
+  expect_equal(d(list(start = "2026-11-30", freq = "monthly_weekday", ends = "after", count = 3)),
+               c("2026-11-30", "2026-12-28", "2027-01-25"))           # last Monday
+  expect_equal(d(list(start = "2028-02-29", freq = "yearly", ends = "after", count = 2)),
+               c("2028-02-29", "2032-02-29"))
+  expect_equal(length(d(list(start = "2026-11-02", freq = "daily"))), 1000)  # no end: capped
+})
+
+test("repeat: rule text for Google", {
+  r <- clean_repeat(list(freq = "biweekly", days = list("WE", "MO"), ends = "on",
+                         until = "2026-12-10"), "2026-11-02")
+  expect_equal(rrule(r, FALSE, tz), "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261211T065959Z")
+  expect_equal(rrule(r, TRUE, tz),  "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261210")
+  r <- clean_repeat(list(freq = "monthly_weekday", ends = "after", count = 3), "2026-11-10")
+  expect_equal(rrule(r, FALSE, tz), "RRULE:FREQ=MONTHLY;BYDAY=2TU;COUNT=3")
+  r <- clean_repeat(list(freq = "biweekly", days = list("MO", "WE"), ends = "on",
+                         until = "2026-12-10"), "2026-11-02")
+  expect_equal(repeat_dates(parse_rrule(rrule(r, FALSE, tz), r$first, tz)), repeat_dates(r))
+})
+
+test("repeat: friendly errors", {
+  expect_error(clean_repeat(list(freq = "daily", as = "separate"), "2026-11-02"), "need an end")
+  expect_error(clean_repeat(list(freq = "daily", ends = "after", count = 150, as = "separate"),
+                            "2026-11-02"), "more than 100")
+  expect_error(clean_repeat(list(freq = "weekly", ends = "on", until = "2026-10-01"),
+                            "2026-11-02"), "can't end before")
+  expect_error(clean_repeat(list(freq = "daily", ends = "after", count = 0), "2026-11-02"),
+               "how many times")
+  expect_equal(clean_repeat(list(freq = "none"), "2026-11-02"), NULL)
+})
+
+swim <- function(...) row_of_all("Swim")
+row_of_all <- function(title) {
+  DBI::dbGetQuery(xcon, "SELECT * FROM events WHERE calendar = 'family' AND title LIKE ?
+                         ORDER BY start_ts", params = list(paste0(title, "%")))
+}
+local_day <- function(ts) format(as.POSIXct(ts, origin = "1970-01-01", tz = tz), "%Y-%m-%d %H:%M")
+
+test("repeat: a series shows on each day; change one day; change all; delete all", {
+  add_event(g, wcfg, "family", list(
+    title = "Swim", who = list("V"), date = "2026-11-02", start_time = "16:00",
+    end_time = "17:00", `repeat` = list(freq = "weekly", days = list("TU", "TH"),
+                                        ends = "after", count = 4, as = "series")))
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- swim()
+  expect_equal(local_day(r$start_ts),
+               c("2026-11-03 16:00", "2026-11-05 16:00", "2026-11-10 16:00", "2026-11-12 16:00"))
+  expect_equal(length(unique(r$recurring_id)), 1)
+  stopifnot(!is.na(r$recurring_id[1]))
+
+  change_event(g, wcfg, xcon, "family", r$id[2], list(
+    title = "Swim, pool closed early", who = list("V"), date = "2026-11-05",
+    start_time = "15:00", end_time = "16:00"), scope = "one")
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- swim()
+  expect_equal(r$title[2], "Swim, pool closed early")
+  expect_equal(local_day(r$start_ts[2]), "2026-11-05 15:00")
+  expect_equal(r$title[c(1, 3, 4)], rep("Swim", 3))
+
+  change_event(g, wcfg, xcon, "family", r$id[3], list(
+    title = "Swim team", who = list("V", "N"), date = "2026-11-10",
+    start_time = "16:30", end_time = "17:45"), scope = "series")
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- swim()
+  expect_equal(r$title[c(1, 3, 4)], rep("Swim team", 3))
+  expect_equal(r$who[c(1, 3, 4)], rep("V N", 3))
+  expect_equal(local_day(r$start_ts[c(1, 3, 4)]),
+               c("2026-11-03 16:30", "2026-11-10 16:30", "2026-11-12 16:30"))
+  expect_equal((r$end_ts - r$start_ts)[1], 75 * 60)
+
+  wk <- week_payload(xcon, wcfg, start = as.Date("2026-11-02"),
+                     now = as.POSIXct("2026-11-01 12:00", tz = tz))
+  ev <- Filter(function(e) startsWith(e$title, "Swim"), unlist(lapply(wk$days, `[[`, "events"),
+                                                                  recursive = FALSE))
+  stopifnot(all(vapply(ev, `[[`, TRUE, "repeats")))
+
+  remove_event(g, wcfg, xcon, "family", r$id[1], scope = "series")
+  sync_calendar(g, xcon, wcfg, "family")
+  expect_equal(nrow(swim()), 0)
+})
+
+test("repeat: deleting one day leaves the rest", {
+  add_event(g, wcfg, "family", list(title = "Piano", date = "2026-11-02", start_time = "15:00",
+    `repeat` = list(freq = "daily", ends = "after", count = 3, as = "series")))
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- row_of_all("Piano")
+  remove_event(g, wcfg, xcon, "family", r$id[2], scope = "one")
+  sync_calendar(g, xcon, wcfg, "family")
+  expect_equal(substr(local_day(row_of_all("Piano")$start_ts), 1, 10), c("2026-11-02", "2026-11-04"))
+  remove_event(g, wcfg, xcon, "family", r$id[1], scope = "series")
+  sync_calendar(g, xcon, wcfg, "family")
+})
+
+test("repeat: separate events stand alone", {
+  ids <- add_event(g, wcfg, "family", list(title = "Library", date = "2026-11-02",
+    all_day = TRUE, `repeat` = list(freq = "weekly", ends = "after", count = 3, as = "separate")))
+  expect_equal(length(unique(ids)), 3)
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- row_of_all("Library")
+  expect_equal(substr(r$start, 1, 10), c("2026-11-02", "2026-11-09", "2026-11-16"))
+  stopifnot(all(is.na(r$recurring_id)))
+  expect_error(change_event(g, wcfg, xcon, "family", r$id[1], list(title = "x",
+    date = "2026-11-02", all_day = TRUE), scope = "series"), "isn't part of a series")
+  for (id in r$id) remove_event(g, wcfg, xcon, "family", id)
+  sync_calendar(g, xcon, wcfg, "family")
+})
+
+test("repeat: an all-day series can't become timed as a whole", {
+  add_event(g, wcfg, "family", list(title = "Camp", date = "2026-11-02", all_day = TRUE,
+    `repeat` = list(freq = "daily", ends = "after", count = 2, as = "series")))
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- row_of_all("Camp")
+  expect_error(change_event(g, wcfg, xcon, "family", r$id[1], list(title = "Camp",
+    date = "2026-11-02", start_time = "09:00"), scope = "series"), "all day and timed")
+  remove_event(g, wcfg, xcon, "family", r$id[1], scope = "series")
+  sync_calendar(g, xcon, wcfg, "family")
+})
+
 test("writes: accept on a vanished event says so", {
   expect_error(event_accept(g, wcfg, xcon, "family", "nope"), "gone")
 })

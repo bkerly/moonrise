@@ -6,8 +6,10 @@
    redraws the week only when it has. Event text is set with textContent,
    never innerHTML.
 
-   Tap an event to change, accept or delete it. Tap + on a day to add one.
-   Tap the dinner row to set that night's dinner. */
+   Tap an event to change, accept or delete it; for a repeating event,
+   choose this day or the whole series. Tap + on a day to add one, once or
+   repeating (as one series or as separate events). Tap the dinner row to
+   set that night's dinner. */
 
 (function () {
   "use strict";
@@ -199,7 +201,26 @@
 
   // ---- Edit sheet -----------------------------------------------------
 
-  var sheet = { mode: null, ev: null, day: null, who: {}, busy: false };
+  var sheet = { mode: null, ev: null, day: null, who: {}, busy: false,
+                days: {}, as: "series", scope: "one" };
+
+  var WEEKDAYS = [["MO", "Mon"], ["TU", "Tue"], ["WE", "Wed"], ["TH", "Thu"],
+                  ["FR", "Fri"], ["SA", "Sat"], ["SU", "Sun"]];
+  var CODE_BY_WDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+  var DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  // "2026-11-03" -> Date at local noon (noon dodges DST edges)
+  function parseDay(s) {
+    var p = String(s).split("-");
+    return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10), 12);
+  }
+
+  function ordinal(n) {
+    var t = n % 100;
+    if (t >= 11 && t <= 13) return n + "th";
+    return n + (["th", "st", "nd", "rd"][n % 10] || "th");
+  }
 
   function show(id, yes) { $(id).hidden = !yes; }
 
@@ -250,6 +271,143 @@
     show("f-lastday", allDay);
   }
 
+  // ---- Repeat controls (new events) ----
+
+  function drawRepeatOptions() {
+    var sel = $("f-repeat");
+    var keep = sel.value || "none";
+    var d = parseDay($("f-date").value || state.today);
+    var nth = Math.ceil(d.getDate() / 7);
+    var nthWord = nth === 5 ? "last" : ["first", "second", "third", "fourth"][nth - 1];
+    var opts = [
+      ["none", "Doesn't repeat"],
+      ["daily", "Every day"],
+      ["weekly", "Every week"],
+      ["biweekly", "Every 2 weeks"],
+      ["monthly_date", "Monthly on the " + ordinal(d.getDate())],
+      ["monthly_weekday", "Monthly on the " + nthWord + " " + DAY_NAMES[d.getDay()]],
+      ["yearly", "Every year on " + MONTHS[d.getMonth()] + " " + d.getDate()]
+    ];
+    sel.innerHTML = "";
+    for (var i = 0; i < opts.length; i++) {
+      var o = el("option", null, opts[i][1]);
+      o.value = opts[i][0];
+      sel.appendChild(o);
+    }
+    sel.value = keep;
+  }
+
+  function drawDayChips() {
+    var box = $("f-days");
+    box.innerHTML = "";
+    for (var i = 0; i < WEEKDAYS.length; i++) {
+      (function (code, label) {
+        var b = el("button", "chip day-chip" + (sheet.days[code] ? " on" : ""), label);
+        b.type = "button";
+        on(b, function () {
+          sheet.days[code] = !sheet.days[code];
+          drawDayChips();
+        });
+        box.appendChild(b);
+      })(WEEKDAYS[i][0], WEEKDAYS[i][1]);
+    }
+  }
+
+  function drawAsChips() {
+    var box = $("f-as");
+    box.innerHTML = "";
+    var opts = [["series", "One series"], ["separate", "Separate events"]];
+    for (var i = 0; i < opts.length; i++) {
+      (function (value, label) {
+        var b = el("button", "chip" + (sheet.as === value ? " on" : ""), label);
+        b.type = "button";
+        on(b, function () {
+          sheet.as = value;
+          // Separate copies need an end.
+          if (value === "separate" && $("f-ends").value === "never") $("f-ends").value = "after";
+          syncRepeat();
+        });
+        box.appendChild(b);
+      })(opts[i][0], opts[i][1]);
+    }
+    $("f-as-hint").textContent = sheet.as === "series" ?
+      "Later you can change one day or all of them at once." :
+      "Each one is its own event, changed on its own.";
+  }
+
+  function syncRepeat() {
+    var freq = $("f-repeat").value;
+    var repeating = freq !== "none";
+    var weekly = freq === "weekly" || freq === "biweekly";
+    var ends = $("f-ends").value;
+    show("f-ends-box", repeating);
+    show("f-until-box", repeating && ends === "on");
+    show("f-count-box", repeating && ends === "after");
+    show("f-days-box", weekly);
+    show("f-as-box", repeating);
+    if (weekly) {
+      var any = false;
+      for (var k in sheet.days) if (sheet.days.hasOwnProperty(k) && sheet.days[k]) any = true;
+      if (!any) sheet.days[CODE_BY_WDAY[parseDay($("f-date").value).getDay()]] = true;
+      drawDayChips();
+    }
+    if (repeating) drawAsChips();
+  }
+
+  function resetRepeat(date) {
+    sheet.days = {};
+    sheet.as = "series";
+    $("f-repeat").value = "none";
+    drawRepeatOptions();
+    $("f-repeat").value = "none";
+    $("f-ends").value = "never";
+    $("f-count").value = "10";
+    var d = parseDay(date);
+    d.setMonth(d.getMonth() + 3);
+    $("f-until").value = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    syncRepeat();
+  }
+
+  function readRepeat() {
+    var days = [];
+    for (var k in sheet.days) if (sheet.days.hasOwnProperty(k) && sheet.days[k]) days.push(k);
+    return {
+      freq: $("f-repeat").value,
+      days: days,
+      ends: $("f-ends").value,
+      until: $("f-until").value,
+      count: parseInt($("f-count").value, 10),
+      as: sheet.as
+    };
+  }
+
+  // ---- This day / whole series (repeating events) ----
+
+  function drawScopeChips() {
+    var box = $("f-scope");
+    box.innerHTML = "";
+    var opts = [["one", "This day"], ["series", "Whole series"]];
+    for (var i = 0; i < opts.length; i++) {
+      (function (value, label) {
+        var b = el("button", "chip" + (sheet.scope === value ? " on" : ""), label);
+        b.type = "button";
+        on(b, function () {
+          sheet.scope = value;
+          disarmDelete();
+          drawScopeChips();
+        });
+        box.appendChild(b);
+      })(opts[i][0], opts[i][1]);
+    }
+    var whole = sheet.scope === "series";
+    // A whole series keeps its days; it can't switch between all day and timed.
+    $("f-date").disabled = whole;
+    $("f-allday").disabled = whole;
+    $("f-scope-hint").textContent = whole ?
+      "Every day in the series gets this name, people and time. The days stay the same." :
+      "Only this day changes.";
+  }
+
   function openSheet(mode) {
     sheet.mode = mode;
     showError("");
@@ -259,6 +417,12 @@
     show("form-dinner", mode === "dinner");
     show("b-delete", mode === "edit" || (mode === "dinner" && sheet.day.dinner.length));
     show("b-accept", mode === "edit" && sheet.ev.pending);
+    show("f-repeat-box", mode === "add");
+    var repeating = mode === "edit" && sheet.ev.repeats;
+    show("f-scope-box", repeating);
+    sheet.scope = "one";
+    if (repeating) drawScopeChips();
+    else { $("f-date").disabled = false; $("f-allday").disabled = false; }
     show("sheet", true);
   }
 
@@ -293,6 +457,7 @@
     $("sheet-title").textContent = "Add event";
     $("sheet-note").textContent = day.weekday + " " + day.month + " " + day.day;
     fillForm({ date: day.date, start_time: start, all_day: false });
+    resetRepeat(day.date);
     openSheet("add");
     $("f-title").focus();
   }
@@ -301,7 +466,7 @@
     sheet.ev = ev;
     sheet.day = null;
     $("sheet-title").textContent = ev.pending ? "Review event" : "Change event";
-    $("sheet-note").textContent = ev.repeats ? "Repeats. Changes apply to this day only." :
+    $("sheet-note").textContent = ev.repeats ? "Part of a repeating series." :
       (ev.pending ? "Added from an email." : "");
     fillForm(ev);
     openSheet("edit");
@@ -331,7 +496,9 @@
       end_time: allDay ? "" : $("f-end").value,
       end_date: allDay ? $("f-enddate").value : "",
       // Saving a review item counts as reviewing it.
-      pending: false
+      pending: false,
+      "repeat": sheet.mode === "add" ? readRepeat() : null,
+      scope: sheet.scope
     };
   }
 
@@ -368,7 +535,11 @@
 
   $("f-date").addEventListener("change", function () {
     if ($("f-enddate").value < $("f-date").value) $("f-enddate").value = $("f-date").value;
+    if (sheet.mode === "add") drawRepeatOptions();
   }, false);
+
+  $("f-repeat").addEventListener("change", syncRepeat, false);
+  $("f-ends").addEventListener("change", syncRepeat, false);
 
   on($("b-cancel"), closeSheet);
 
@@ -397,15 +568,16 @@
   // Delete takes two taps instead of a pop-up, which can lock a kiosk.
   on($("b-delete"), function () {
     var b = $("b-delete");
+    var whole = sheet.mode === "edit" && sheet.ev.repeats && sheet.scope === "series";
     if (b.className.indexOf("armed") < 0) {
       b.className = "btn danger armed";
-      b.textContent = "Tap again to delete";
+      b.textContent = whole ? "Tap again to delete all" : "Tap again to delete";
       return;
     }
     if (sheet.mode === "dinner") {
       send("PUT", "/api/dinner/" + sheet.day.date, { title: "" });
     } else {
-      send("DELETE", evPath(sheet.ev), null);
+      send("DELETE", evPath(sheet.ev) + (whole ? "?scope=series" : ""), null);
     }
   });
 

@@ -9,10 +9,10 @@
 #   GET    /wall/                          the wall page (files in www/)
 #   GET    /api/version                    polled to know when to redraw
 #   GET    /api/week?start=YYYY-MM-DD      the week view
-#   POST   /api/events                     add an event
-#   PATCH  /api/events/<calendar>/<id>     change an event
+#   POST   /api/events                     add an event (body "repeat": see R/repeat.R)
+#   PATCH  /api/events/<calendar>/<id>     change an event (body "scope": one | series)
 #   POST   /api/events/<calendar>/<id>/accept   remove the "?"
-#   DELETE /api/events/<calendar>/<id>     delete an event
+#   DELETE /api/events/<calendar>/<id>     delete an event (?scope=one | series)
 #   PUT    /api/dinner/<date>              set or clear one night's dinner
 #
 # Writes go to Google first; then that calendar is synced at once, so the
@@ -95,16 +95,15 @@ moonrise_router <- function(cfg, con, google = NULL, www = "www") {
   pr <- plumber::pr_post(pr, "/api/events", function(req, res) {
     b   <- body_of(req)
     cal <- as.character(b$calendar %||% "family")
-    write(req, res, cal, function() {
-      event_insert(google, cfg, cal, event_body(clean_form(b, cfg), cfg))
-    })
+    write(req, res, cal, function() add_event(google, cfg, cal, b))
   }, serializer = json)
 
   pr <- plumber::pr_handle(pr, "PATCH", "/api/events/<calendar>/<id>",
     function(req, res, calendar, id) {
       b <- body_of(req)
+      scope <- as.character(b$scope %||% "one")
       write(req, res, calendar, function() {
-        event_patch(google, cfg, calendar, id, event_body(clean_form(b, cfg), cfg))
+        change_event(google, cfg, con, calendar, id, b, scope)
       })
     }, serializer = json)
 
@@ -116,9 +115,9 @@ moonrise_router <- function(cfg, con, google = NULL, www = "www") {
     }, serializer = json)
 
   pr <- plumber::pr_delete(pr, "/api/events/<calendar>/<id>",
-    function(req, res, calendar, id) {
+    function(req, res, calendar, id, scope = "one") {
       write(req, res, calendar, function() {
-        event_delete(google, cfg, calendar, id)
+        remove_event(google, cfg, con, calendar, id, scope)
       })
     }, serializer = json)
 

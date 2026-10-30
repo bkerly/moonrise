@@ -18,6 +18,7 @@ R/sync.R               keeps the store in step with Google Calendar
 R/wall.R               week view: days, labels, colors
 R/server.R             web server for the wall page and its API
 R/events.R             forms to Google events; add, change, accept, delete
+R/repeat.R             repeat rules: Google's RRULE text and the dates it gives
 R/extract.R            email to text; prompt; checking the model's answer
 R/ollama.R             calls the local Ollama model
 R/import.R             email import loop
@@ -113,8 +114,19 @@ Colors follow these rules, using `adults` and `colors` from the config
 
 Tap an event to change, accept or delete it (delete takes a second
 tap). Tap **+** on a day to add an event, or the dinner row to set that
-night's dinner. Changes go to Google first, then show on the wall. For
-a repeating event, a change applies to that day only.
+night's dinner. Changes go to Google first, then show on the wall.
+
+A new event can repeat: every day, every week (on chosen weekdays),
+every 2 weeks, monthly (on the same date, or the same weekday such as
+"the second Tuesday"), or every year. It ends never, on a date, or
+after a number of times. Save it as:
+
+- **One series**: a single repeating event in Google. When you change
+  or delete one, choose **This day** or **Whole series**. A whole-series
+  change sets the name, people and time for every day; the days stay the
+  same, and days already changed on their own keep their changes.
+- **Separate events**: independent copies, one per date (up to 100),
+  each changed on its own. These need an end.
 
 To try the page without Google: `Rscript tests/demo_server.R`. Edits work
 against a fake calendar, and a sample email is imported after a few

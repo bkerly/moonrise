@@ -65,6 +65,48 @@
           <input id="f-enddate" class="input" type="date">
         </label>
       </div>
+
+      <!-- New events only: how it repeats. -->
+      <div id="f-repeat-box">
+        <div class="row">
+          <label class="field grow">
+            <span class="field-label">Repeats</span>
+            <select id="f-repeat" class="input"></select>
+          </label>
+          <label id="f-ends-box" class="field grow" hidden>
+            <span class="field-label">Ends</span>
+            <select id="f-ends" class="input">
+              <option value="never">Never</option>
+              <option value="on">On a date</option>
+              <option value="after">After N times</option>
+            </select>
+          </label>
+          <label id="f-until-box" class="field grow" hidden>
+            <span class="field-label">Last time</span>
+            <input id="f-until" class="input" type="date">
+          </label>
+          <label id="f-count-box" class="field narrow" hidden>
+            <span class="field-label">Times</span>
+            <input id="f-count" class="input" type="number" min="1" max="500" value="10">
+          </label>
+        </div>
+        <div id="f-days-box" class="field" hidden>
+          <span class="field-label">On</span>
+          <div id="f-days" class="chips"></div>
+        </div>
+        <div id="f-as-box" class="field" hidden>
+          <span class="field-label">Save as</span>
+          <div id="f-as" class="chips"></div>
+          <span id="f-as-hint" class="hint"></span>
+        </div>
+      </div>
+
+      <!-- Repeating events only: change this day or the whole series. -->
+      <div id="f-scope-box" class="field" hidden>
+        <span class="field-label">Change</span>
+        <div id="f-scope" class="chips"></div>
+        <span id="f-scope-hint" class="hint"></span>
+      </div>
     </div>
 
     <div id="form-dinner" hidden>

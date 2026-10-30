@@ -127,6 +127,102 @@ event_delete <- function(google, cfg, calendar, id) {
          params = list(calendarId = calendar_id(cfg, calendar), eventId = id))
 }
 
+# ---- Adding, changing and deleting, with repeats ------------------------------
+
+# A form moved to another first day, keeping its length.
+shift_form <- function(f, d) {
+  off <- as.Date(d) - as.Date(f$date)
+  f$date <- format(as.Date(d))
+  if (nzchar(f$end_date)) f$end_date <- format(as.Date(f$end_date) + off)
+  f
+}
+
+# Adds an event from a form. form[["repeat"]] (see R/repeat.R) makes it a
+# series or separate copies. Returns the ids Google gave.
+add_event <- function(google, cfg, calendar, form) {
+  f   <- clean_form(form, cfg)
+  rep <- clean_repeat(form[["repeat"]], f$date)
+  if (is.null(rep)) {
+    return(event_insert(google, cfg, calendar, event_body(f, cfg))$id)
+  }
+  f <- shift_form(f, rep$first)   # weekly: first chosen weekday
+
+  if (rep$as == "series") {
+    body <- event_body(f, cfg)
+    body$recurrence <- list(rrule(rep, f$all_day, cfg$tz))
+    return(event_insert(google, cfg, calendar, body)$id)
+  }
+
+  dates <- repeat_dates(rep, limit = max_separate)
+  ids <- character()
+  for (d in as.list(dates)) {
+    ev <- tryCatch(event_insert(google, cfg, calendar, event_body(shift_form(f, d), cfg)),
+                   error = function(e) {
+                     stop(sprintf("Added %d of %d events, then Google said: %s",
+                                  length(ids), length(dates),
+                                  google_message(conditionMessage(e))), call. = FALSE)
+                   })
+    ids <- c(ids, ev$id)
+  }
+  ids
+}
+
+# The series an event belongs to, or NA.
+series_of <- function(con, calendar, id) {
+  sid <- DBI::dbGetQuery(con,
+    "SELECT recurring_id FROM events WHERE calendar = ? AND id = ?",
+    params = list(calendar, id))$recurring_id
+  if (length(sid)) sid else NA_character_
+}
+
+need_series <- function(con, calendar, id) {
+  sid <- series_of(con, calendar, id)
+  if (is.na(sid)) stop("That event isn't part of a series.", call. = FALSE)
+  sid
+}
+
+# Changes one event, or with scope = "series" every event in its series.
+# A whole series keeps its days; it takes the new title, people, times and
+# length. It can't switch between all-day and timed.
+change_event <- function(google, cfg, con, calendar, id, form, scope = "one") {
+  f <- clean_form(form, cfg)
+  if (!identical(scope, "series")) {
+    return(event_patch(google, cfg, calendar, id, event_body(f, cfg)))
+  }
+
+  sid    <- need_series(con, calendar, id)
+  master <- google("GET", event_path,
+                   params = list(calendarId = calendar_id(cfg, calendar), eventId = sid))
+  master_all_day <- !is.null(master[["start"]][["date"]])
+  if (master_all_day != f$all_day) {
+    stop("A whole series can't switch between all day and timed. Change one day instead.",
+         call. = FALSE)
+  }
+
+  body <- list(summary = compose_title(f$title, f$who, f$pending))
+  span <- as.integer(as.Date(f$end_date) - as.Date(f$date))
+  if (f$all_day) {
+    first <- as.Date(master[["start"]][["date"]])
+    body$end <- list(date = format(first + span + 1))
+  } else {
+    # Google writes the series start in its own zone, so the first ten
+    # characters are its local date.
+    first <- as.Date(substr(master[["start"]][["dateTime"]], 1, 10))
+    tz    <- master[["start"]][["timeZone"]] %||% cfg$tz
+    body$start <- list(dateTime = paste0(format(first), "T", f$start_time, ":00"),
+                       timeZone = tz)
+    body$end   <- list(dateTime = paste0(format(first + span), "T", f$end_time, ":00"),
+                       timeZone = tz)
+  }
+  event_patch(google, cfg, calendar, sid, body)
+}
+
+# Deletes one event, or with scope = "series" the whole series.
+remove_event <- function(google, cfg, con, calendar, id, scope = "one") {
+  target <- if (identical(scope, "series")) need_series(con, calendar, id) else id
+  event_delete(google, cfg, calendar, target)
+}
+
 # Removes the "?" from an event's title, keeping everything else.
 event_accept <- function(google, cfg, con, calendar, id) {
   raw <- DBI::dbGetQuery(con,

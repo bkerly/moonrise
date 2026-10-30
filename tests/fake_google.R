@@ -45,6 +45,46 @@ fake_google <- function(calendars) {
     x
   }
 
+  # ---- Repeating events, expanded the way Google does: instance ids are
+  # "<series id>_<yyyymmdd>", each with recurringEventId. Single-day
+  # changes and cancellations are kept as exceptions.
+  env$exceptions <- list()
+  is_instance <- function(id) grepl("_\\d{8}$", id)
+
+  expand_all <- function(events, horizon) {
+    out <- list()
+    for (ev in events) {
+      if (is.null(ev$recurrence)) { out[[length(out) + 1]] <- ev; next }
+      all_day <- !is.null(ev[["start"]][["date"]])   # [[ ]]: $date would match dateTime
+      first   <- as.Date(if (all_day) ev[["start"]][["date"]] else substr(ev$start$dateTime, 1, 10))
+      tz      <- ev$start$timeZone %||% "UTC"
+      days    <- repeat_dates(parse_rrule(ev$recurrence[[1]], first, tz), horizon = horizon)
+      span    <- as.Date(if (all_day) ev[["end"]][["date"]] else substr(ev$end$dateTime, 1, 10)) - first
+      for (d in as.list(days)) {
+        inst <- ev
+        inst$recurrence <- NULL
+        inst$id <- paste0(ev$id, "_", format(d, "%Y%m%d"))
+        inst$recurringEventId <- ev$id
+        if (all_day) {
+          inst$start <- list(date = format(d))
+          inst$end   <- list(date = format(d + span))
+        } else {
+          inst$start <- normalize_time(list(
+            dateTime = paste0(format(d), substr(ev$start$dateTime, 11, 19)), timeZone = tz))
+          inst$end <- normalize_time(list(
+            dateTime = paste0(format(d + span), substr(ev$end$dateTime, 11, 19)), timeZone = tz))
+        }
+        ex <- env$exceptions[[inst$id]]
+        if (!is.null(ex)) {
+          if (identical(ex$status, "cancelled")) next
+          inst <- utils::modifyList(inst, ex)
+        }
+        out[[length(out) + 1]] <- inst
+      }
+    }
+    out
+  }
+
   env$add_event <- function(k, ev) {
     ev$id     <- ev$id %||% new_id("ev")
     ev$status <- ev$status %||% "confirmed"
@@ -79,8 +119,14 @@ fake_google <- function(calendars) {
 
     # ---- Calendar
     k <- cal_name(params$calendarId)
+    if (method == "GET" && !is.null(params$eventId)) {
+      return(env$events[[k]][[find(k, params$eventId)]])
+    }
     if (method == "GET") {
-      if (!is.null(params$timeMin)) return(list(items = env$events[[k]]))
+      if (!is.null(params$timeMin)) {
+        horizon <- as.Date(substr(params$timeMax, 1, 10)) + 1
+        return(list(items = expand_all(env$events[[k]], horizon)))
+      }
       n <- if (is.null(params$syncToken)) length(env$events[[k]]) else env$changes[[k]]
       env$changes[[k]] <- 0
       env$tokens[[k]]  <- env$tokens[[k]] + 1
@@ -92,6 +138,20 @@ fake_google <- function(calendars) {
       body$end   <- normalize_time(body$end)
       id <- env$add_event(k, body)
       return(env$events[[k]][[find(k, id)]])
+    }
+    if (method == "PATCH" && is_instance(params$eventId)) {
+      ex <- env$exceptions[[params$eventId]] %||% list()
+      for (f in names(body)) {
+        ex[[f]] <- if (f %in% c("start", "end")) normalize_time(body[[f]]) else body[[f]]
+      }
+      env$exceptions[[params$eventId]] <- ex
+      env$changes[[k]] <- env$changes[[k]] + 1
+      return(ex)
+    }
+    if (method == "DELETE" && is_instance(params$eventId)) {
+      env$exceptions[[params$eventId]] <- list(status = "cancelled")
+      env$changes[[k]] <- env$changes[[k]] + 1
+      return(invisible(TRUE))
     }
     if (method == "PATCH") {
       i  <- find(k, params$eventId)
