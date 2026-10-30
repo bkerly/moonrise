@@ -1,0 +1,16 @@
+# Secrets. The real copies live in ~/.config/moonrise, outside the repo.
+# These lines are a backstop in case one lands here by mistake.
+config.json
+*_config.json
+client_secret*.json
+tokens/
+.httr-oauth
+*.token
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+
+# macOS
+.DS_Store

@@ -1,0 +1,21 @@
+{
+  "account": "import-account@gmail.com",
+  "client_json": "~/.config/moonrise/client_secret.json",
+  "token_cache": "~/.config/moonrise/tokens",
+  "tz": "America/Denver",
+  "calendars": {
+    "family": "REPLACE_ME@group.calendar.google.com",
+    "dinner": "REPLACE_ME@group.calendar.google.com"
+  },
+  "allowed_senders": [
+    "parent1@example.com",
+    "parent2@example.com"
+  ],
+  "family": {
+    "B": "Parent One",
+    "K": "Parent Two",
+    "V": "Child One",
+    "N": "Child Two",
+    "A": "Child Three"
+  }
+}
