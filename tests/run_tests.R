@@ -611,7 +611,7 @@ test("import: photos go to a vision model as images", {
   fk$add_email(fake_email("parent@example.org", "Photo", text = "See photo", sent = now,
     attachments = list(list(filename = "flyer.png", mime = "image/png", raw = raw,
                             size = 30000))))
-  icfg$import$vision <<- TRUE
+  icfg$import$vision <- TRUE
   run_all()
   last <- prompts[[length(prompts)]]
   expect_equal(length(last$images), 1)
