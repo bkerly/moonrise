@@ -620,6 +620,43 @@ test("import: photos go to a vision model as images", {
 })
 
 DBI::dbDisconnect(xcon)
+
+# ---- Real HTTP: every method signs and sends ---------------------------------
+# httr's PATCH and PUT don't convert a bare token the way GET and POST do;
+# this once broke editing with "is.request(y) is not TRUE".
+
+test("google helper: GET, POST, PATCH, PUT, DELETE all reach the server", {
+  port <- httpuv::randomPort()
+  srv <- callr::r_bg(function(port) {
+    httpuv::runServer("127.0.0.1", port, list(call = function(req) {
+      list(status = 200L, headers = list("Content-Type" = "application/json"),
+           body = jsonlite::toJSON(list(
+             method = req$REQUEST_METHOD,
+             auth = if (is.null(req$HTTP_AUTHORIZATION)) "" else req$HTTP_AUTHORIZATION,
+             body = rawToChar(req$rook.input$read())), auto_unbox = TRUE))
+    }))
+  }, args = list(port))
+  on.exit(srv$kill(), add = TRUE)
+  Sys.sleep(1.5)
+
+  tok <- httr::Token2.0$new(
+    app = httr::oauth_app("t", key = "k", secret = "s"),
+    endpoint = httr::oauth_endpoints("google"),
+    credentials = list(access_token = "TEST", token_type = "Bearer"),
+    params = list(as_header = TRUE), cache_path = FALSE)
+  g <- moonrise_google(list(), token = tok)
+  rb <- gargle::request_build
+  local_build <- function(..., base_url) rb(..., base_url = sprintf("http://127.0.0.1:%d", port))
+  utils::assignInNamespace("request_build", local_build, "gargle")
+  on.exit(utils::assignInNamespace("request_build", rb, "gargle"), add = TRUE)
+
+  for (m in c("GET", "POST", "PATCH", "PUT")) {
+    r <- g(m, "calendar/v3/x", body = if (m == "GET") NULL else list(summary = "Hi"))
+    expect_equal(c(r$method, r$auth), c(m, "Bearer TEST"))
+    if (m != "GET") expect_equal(r$body, '{"summary":"Hi"}')
+  }
+  expect_equal(g("DELETE", "calendar/v3/x"), TRUE)
+})
 unlink(tmp, recursive = TRUE)
 
 cat(sprintf("\n%d passed, %d failed\n", passed, failed))

@@ -45,9 +45,13 @@ moonrise_gone <- function() {
 # Google rejects ("Root element must be a message").
 moonrise_google <- function(cfg, scopes = moonrise_scopes,
                             token = moonrise_token(cfg, scopes)) {
+  # httr's GET and POST turn a token into request settings themselves,
+  # but its PATCH and PUT don't, and fail with "is.request(y) is not
+  # TRUE". Converting once here works for every method.
+  auth <- httr::config(token = token)
   function(method, path, params = list(), body = NULL) {
     req  <- gargle::request_build(method = method, path = path,
-                                  params = params, body = body, token = token)
+                                  params = params, body = body, token = auth)
     resp <- gargle::request_make(req)
     code <- httr::status_code(resp)
     if (code == 410) stop(moonrise_gone())
