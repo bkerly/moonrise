@@ -1,0 +1,26 @@
+{
+  "name": "Moonrise",
+  "short_name": "Moonrise",
+  "start_url": "/wall/",
+  "scope": "/wall/",
+  "display": "standalone",
+  "background_color": "#F4F1EA",
+  "theme_color": "#1D1B18",
+  "icons": [
+    {
+      "src": "/wall/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/wall/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/wall/icons/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

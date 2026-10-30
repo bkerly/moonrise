@@ -5,6 +5,7 @@
 # the sync and import timers keep firing between requests.
 #
 #   GET    /                               redirects to /wall/
+#   GET    /favicon.ico                    redirects to the icon
 #   GET    /wall/                          the wall page (files in www/)
 #   GET    /api/version                    polled to know when to redraw
 #   GET    /api/week?start=YYYY-MM-DD      the week view
@@ -30,6 +31,13 @@ moonrise_router <- function(cfg, con, google = NULL, www = "www") {
   pr <- plumber::pr_get(pr, "/", function(res) {
     res$status <- 302
     res$setHeader("Location", "/wall/")
+    ""
+  }, serializer = plumber::serializer_text())
+
+  # Browsers ask for /favicon.ico on their own; send them to the PNG.
+  pr <- plumber::pr_get(pr, "/favicon.ico", function(res) {
+    res$status <- 301
+    res$setHeader("Location", "/wall/icons/favicon-32.png")
     ""
   }, serializer = plumber::serializer_text())
 

@@ -156,6 +156,11 @@ Settings in `config.json`, shown with their defaults:
 Fonts are Atkinson Hyperlegible and DM Serif Display (SIL Open Font
 License), served from `www/fonts` so the tablet needs no internet.
 
+The icon (`www/icons/favicon.svg`, a crescent rising over an orange
+horizon) has PNG copies for older browsers and phone home screens. To
+redraw the PNGs after editing the SVG, render it at 32, 180, 192 and 512
+pixels.
+
 ## Tests
 
 ```sh
