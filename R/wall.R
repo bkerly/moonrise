@@ -120,6 +120,18 @@ review_items <- function(con, cfg, now = Sys.time()) {
   })
 }
 
+# "Nov 6 - 12", "Oct 27 - Nov 2", "Dec 29, 2026 - Jan 4, 2027"
+week_range <- function(a, b) {
+  md <- function(d) sub(" 0", " ", format(d, "%b %d"))
+  if (format(a, "%Y") != format(b, "%Y")) {
+    return(paste0(md(a), ", ", format(a, "%Y"), " \u2013 ", md(b), ", ", format(b, "%Y")))
+  }
+  if (format(a, "%m") == format(b, "%m")) {
+    return(paste0(md(a), " \u2013 ", as.integer(format(b, "%d"))))
+  }
+  paste0(md(a), " \u2013 ", md(b))
+}
+
 # The week view: `days` days from `start` (a Date), events bucketed by
 # local day. Multi-day events appear on every day they cover.
 week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
@@ -161,6 +173,12 @@ week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
     today   = format(today),
     heading = sub(" 0", " ", format(today, "%A, %B %d")),
     start   = format(start),
+    current = start == today,
+    range   = week_range(dates[1], dates[days]),
+    window  = list(back = cfg$sync$days_back, ahead = cfg$sync$days_ahead),
+    # Weeks past the synced window have no events to show.
+    outside = dates[days] < today - cfg$sync$days_back ||
+              dates[1] > today + cfg$sync$days_ahead,
     version = store_version(con)$version,
     people  = lapply(seq_len(nrow(people)), function(i) as.list(people[i, ])),
     groups  = cfg$group_colors,

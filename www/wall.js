@@ -6,6 +6,9 @@
    redraws the week only when it has. Event text is set with textContent,
    never innerHTML.
 
+   The arrows (or a swipe) move a week at a time; Today comes back, and so
+   does the page by itself after two minutes untouched.
+
    Tap an event to change, accept or delete it; for a repeating event,
    choose this day or the whole series. Tap + on a day to add one, once or
    repeating (as one series or as separate events). Tap the dinner row to
@@ -17,7 +20,12 @@
   var POLL_MS = 15000;
   var REDRAW_MS = 5 * 60 * 1000;  // refresh "past" dimming even when quiet
 
-  var state = { version: null, today: null, people: [], groups: null, reviews: [] };
+  var state = { version: null, today: null, people: [], groups: null, reviews: [],
+                start: null };   // start: null = this week, else "YYYY-MM-DD"
+
+  var IDLE_MS = 2 * 60 * 1000;    // untouched this long away from today: go back
+  var lastTouch = new Date().getTime();
+  var weekRequest = 0;            // ignore answers to older requests
 
   // ---- Helpers --------------------------------------------------------
 
@@ -171,7 +179,15 @@
   }
 
   function drawWeek(data) {
-    $("heading").textContent = data.heading;
+    // This week shows today's date; other weeks show their range.
+    $("heading").textContent = data.current ? data.heading : data.range;
+    $("nav-today").className = "nav-today" + (data.current ? "" : " away");
+    var note = $("outside-note");
+    note.hidden = !data.outside;
+    if (data.outside) {
+      note.textContent = "Moonrise keeps " + data.window.back + " days back and " +
+        data.window.ahead + " days ahead, so this week has nothing to show.";
+    }
     var week = $("week");
     week.innerHTML = "";
     for (var i = 0; i < data.days.length; i++) week.appendChild(drawDay(data.days[i], i === 0));
@@ -191,7 +207,10 @@
   }
 
   function loadWeek(then) {
-    getJSON("/api/week", function (err, data) {
+    var mine = ++weekRequest;
+    var url = "/api/week" + (state.start ? "?start=" + state.start : "");
+    getJSON(url, function (err, data) {
+      if (mine !== weekRequest) return;   // a newer request is on its way
       setOnline(!err);
       if (err) return;
       state.version = data.version;
@@ -201,8 +220,34 @@
     });
   }
 
+  // ---- Moving between weeks ----
+
+  function ymd(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function shiftWeek(n) {
+    if (!state.today) return;
+    var d = parseDay(state.start || state.today);
+    d.setDate(d.getDate() + 7 * n);
+    state.start = ymd(d) === state.today ? null : ymd(d);
+    loadWeek();
+  }
+
+  function goToday() {
+    if (state.start === null) return;
+    state.start = null;
+    loadWeek();
+  }
+
+  function touched() { lastTouch = new Date().getTime(); }
+
   function poll() {
     drawClock();
+    // Left on another week with no one around: come back to this week.
+    if (state.start !== null && !sheet.mode && new Date().getTime() - lastTouch > IDLE_MS) {
+      goToday();
+    }
     getJSON("/api/version", function (err, v) {
       setOnline(!err);
       if (err) return;
@@ -594,6 +639,36 @@
   });
 
   on($("review-btn"), openReviews);
+
+  on($("nav-prev"), function () { shiftWeek(-1); });
+  on($("nav-next"), function () { shiftWeek(1); });
+  on($("nav-today"), goToday);
+
+  document.addEventListener("touchstart", touched, false);
+  document.addEventListener("mousedown", touched, false);
+
+  // Swipe left for the next week, right for the previous one. A mostly
+  // vertical drag is left alone so the day columns still scroll.
+  var swipe = null;
+  $("week").addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { swipe = null; return; }
+    swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, false);
+  $("week").addEventListener("touchend", function (e) {
+    if (!swipe || !e.changedTouches.length) return;
+    var dx = e.changedTouches[0].clientX - swipe.x;
+    var dy = e.changedTouches[0].clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > 2 * Math.abs(dy)) shiftWeek(dx < 0 ? 1 : -1);
+  }, false);
+
+  // Arrow keys, for a keyboard.
+  document.addEventListener("keydown", function (e) {
+    touched();
+    if (sheet.mode) return;
+    if (e.keyCode === 37) shiftWeek(-1);
+    if (e.keyCode === 39) shiftWeek(1);
+  }, false);
 
   on($("sheet"), function (e) {
     if (e.target === $("sheet")) closeSheet();   // tap outside the box

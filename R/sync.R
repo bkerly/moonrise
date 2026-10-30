@@ -131,13 +131,13 @@ fetch_window <- function(google, calendar_id, cfg, now) {
 
 # ---- One calendar, one pass -----------------------------------------------
 
-sync_calendar <- function(google, con, cfg, name, now = Sys.time()) {
+sync_calendar <- function(google, con, cfg, name, now = Sys.time(), force = FALSE) {
   id    <- cfg$calendars[[name]]
   st    <- store_state(con, name)
   token <- st$sync_token
   if (length(token) == 0 || is.na(token)) token <- NULL
 
-  reason <- if (is.null(token)) "first sync" else NULL
+  reason <- if (is.null(token)) "first sync" else if (force) "startup refresh" else NULL
   check  <- tryCatch(
     change_check(google, id, token),
     moonrise_gone = function(e) NULL
@@ -173,11 +173,11 @@ sync_calendar <- function(google, con, cfg, name, now = Sys.time()) {
 # One pass over every calendar. Errors are caught per calendar, saved in
 # sync_state, and logged only when they first appear or change, so a
 # Wi-Fi outage doesn't fill the log.
-sync_all <- function(google, con, cfg, now = Sys.time(), quiet = FALSE) {
+sync_all <- function(google, con, cfg, now = Sys.time(), quiet = FALSE, force = FALSE) {
   for (name in names(cfg$calendars)) {
     before <- store_state(con, name)$last_error
     res <- tryCatch(
-      sync_calendar(google, con, cfg, name, now),
+      sync_calendar(google, con, cfg, name, now, force),
       error = function(e) list(calendar = name, error = conditionMessage(e))
     )
 
@@ -201,8 +201,12 @@ sync_all <- function(google, con, cfg, now = Sys.time(), quiet = FALSE) {
 # Runs sync_all every cfg$sync$every_seconds using `later`, so the same
 # loop can share a process with the plumber web server later on.
 start_sync_loop <- function(google, con, cfg) {
+  # The first pass refreshes the whole window, so a changed setting (such
+  # as days_back) takes effect at startup rather than within the hour.
+  first <- TRUE
   tick <- function() {
-    sync_all(google, con, cfg)
+    sync_all(google, con, cfg, force = first)
+    first <<- FALSE
     later::later(tick, cfg$sync$every_seconds)
   }
   tick()

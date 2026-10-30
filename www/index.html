@@ -13,13 +13,25 @@
 </head>
 <body>
 <header class="top">
-  <h1 id="heading" class="heading">Moonrise</h1>
+  <div class="top-left">
+    <h1 id="heading" class="heading">Moonrise</h1>
+    <div class="nav">
+      <button id="nav-prev" class="nav-btn" type="button" aria-label="Previous week">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 2L4 7l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="nav-today" class="nav-today" type="button">Today</button>
+      <button id="nav-next" class="nav-btn" type="button" aria-label="Next week">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 2l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
   <div class="top-right">
     <span id="status" class="status" hidden>Can't reach the server</span>
     <button id="review-btn" class="review-btn" type="button" hidden></button>
     <span id="clock" class="clock"></span>
   </div>
 </header>
+<p id="outside-note" class="outside-note" hidden></p>
 <main id="week" class="week">
   <p class="loading">Loading the week…</p>
 </main>

@@ -612,3 +612,86 @@ select.input {
   font-size: 17px;
   font-weight: 500;
 }
+
+/* ---- Week navigation ----------------------------------------------- */
+
+.top-left {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  min-width: 0;
+}
+
+.nav {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-left: 14px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+.nav-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #CFC9BC;
+  border-radius: 18px;
+  background: #FFFFFF;
+  color: #1D1B18;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.nav-today {
+  height: 36px;
+  margin: 0 6px;
+  padding: 0 14px;
+  border: 1px solid #CFC9BC;
+  border-radius: 18px;
+  background: #FFFFFF;
+  font-size: 15px;
+  font-weight: 700;
+  color: #6B665E;
+  cursor: pointer;
+}
+
+/* Away from this week: Today stands out as the way back. */
+.nav-today.away {
+  background: #1D1B18;
+  border-color: #1D1B18;
+  color: #FFFFFF;
+}
+
+.outside-note {
+  margin: 0 13px 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #6B665E;
+  font-size: 13px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+.outside-note[hidden] { display: none; }
+
+@media (max-width: 700px) {
+  /* Phones: date and arrows on one line, review and clock below. */
+  .top { display: block; }
+  .top-left {
+    -webkit-justify-content: space-between;
+    justify-content: space-between;
+  }
+  .heading { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .top-right {
+    margin-top: 6px;
+    -webkit-justify-content: space-between;
+    justify-content: space-between;
+  }
+  .review-btn { margin-left: 0; }
+  .nav { margin-left: 8px; }
+  .nav-today { padding: 0 10px; margin: 0 4px; }
+}

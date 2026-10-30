@@ -51,8 +51,8 @@ moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
     sync        = list(
       every_seconds   = 60,   # how often to check for changes
       refresh_minutes = 60,   # full window refresh even with no changes
-      days_back       = 31,   # window kept on the wall
-      days_ahead      = 400
+      days_back       = 90,   # how far back the wall can page
+      days_ahead      = 400   # how far ahead
     )
   )
   cfg <- utils::modifyList(defaults, cfg)

@@ -43,7 +43,7 @@ cfg$data_dir <- file.path(tmp, "data")
 
 test("config fills defaults and keeps overrides", {
   expect_equal(cfg$sync$every_seconds, 60)
-  expect_equal(cfg$sync$days_back, 31)
+  expect_equal(cfg$sync$days_back, 90)
   expect_equal(cfg$sync$days_ahead, 30)
   expect_equal(cfg$allowed_senders, "someone@gmail.com")
   expect_equal(names(cfg$family), c("B", "K", "V", "N", "A"))
@@ -266,6 +266,13 @@ test("failed refresh keeps the old token and data, logs once, recovers", {
   expect_equal(sort(ids), c("e1", "e2", "e4"))
 })
 
+test("startup pass refreshes even with nothing changed", {
+  fg$calls <- list()
+  out <- capture.output(sync_all(fg$google, con, cfg, now = t0 + 4300, force = TRUE))
+  stopifnot(any(grepl("family: startup refresh", out)), any(grepl("dinner: startup refresh", out)))
+  expect_equal(window_calls(fg) >= 2, TRUE)
+})
+
 test("events_between finds overlapping events across calendars", {
   from <- as.POSIXct("2026-11-02 00:00", tz = "America/Denver")
   to   <- as.POSIXct("2026-11-03 00:00", tz = "America/Denver")
@@ -361,6 +368,19 @@ test("week: labels, past, pending, colors", {
   e <- wk$days[[3]]$events[[2]]
   expect_equal(e$pending, TRUE)
   expect_equal(e$color, wcfg$group_colors$none)
+})
+
+test("week: other weeks get a range label; far weeks are flagged", {
+  now <- as.POSIXct("2026-10-31 12:00", tz = tz)
+  expect_equal(wk$current, TRUE)
+  nxt <- week_payload(wcon, wcfg, start = as.Date("2026-11-07"), now = now)
+  expect_equal(c(nxt$current, nxt$range, nxt$outside), c(FALSE, "Nov 7 \u2013 13", FALSE))
+  stopifnot(!any(vapply(nxt$days, `[[`, TRUE, "today")))
+  span <- week_payload(wcon, wcfg, start = as.Date("2026-12-29"), now = now)
+  expect_equal(span$range, "Dec 29, 2026 \u2013 Jan 4, 2027")
+  old <- week_payload(wcon, wcfg, start = as.Date("2026-06-01"), now = now)
+  expect_equal(old$outside, TRUE)
+  expect_equal(old$window$back, 90)
 })
 
 test("week: DST day is 25 hours", {

@@ -76,8 +76,9 @@ Rscript scripts/sync_loop.R     # runs until Ctrl-C
 Each minute the loop asks Google, using a sync token, whether anything
 changed. Usually nothing has, and that costs one small request per
 calendar. When something has changed, and once an hour regardless, it
-fetches the window (31 days back to 400 days ahead) with repeating events
-expanded and replaces the local copy in one transaction. The copy lives in
+fetches the window (90 days back to 400 days ahead) with repeating events
+expanded and replaces the local copy in one transaction. It also does a
+full refresh when the server starts. The copy lives in
 `~/.local/share/moonrise/moonrise.sqlite`.
 
 Optional settings in `config.json`, shown with their defaults:
@@ -85,7 +86,7 @@ Optional settings in `config.json`, shown with their defaults:
 ```json
 "data_dir": "~/.local/share/moonrise",
 "sync": { "every_seconds": 60, "refresh_minutes": 60,
-          "days_back": 31, "days_ahead": 400 }
+          "days_back": 90, "days_ahead": 400 }
 ```
 
 Event titles may start with initials and a dash, for example
@@ -102,6 +103,12 @@ It prints the address to open, for example `http://192.168.1.20:8080/`,
 from any device on the home Wi-Fi. The page shows a rolling week starting
 today, checks for changes every 15 seconds, and reloads itself at 3:30 AM
 so it picks up new code. On a phone it stacks the days.
+
+The arrows next to the date move a week back or ahead (so does a swipe on
+a touch screen, or the arrow keys), and **Today** comes back. Left on
+another week, the page returns to this week by itself after two minutes
+untouched (not while the edit sheet is open). The wall can page as far
+as the local copy goes: 90 days back and 400 ahead by default.
 
 Colors follow these rules, using `adults` and `colors` from the config
 (unlisted people get Okabe-Ito colors in order):
