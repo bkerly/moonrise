@@ -10,7 +10,7 @@
 #
 # Install:
 #   Mac (dev):          source("scripts/setup_mac.R")
-#   Linux Mint (r2u):   sudo apt install r-cran-gargle r-cran-httr r-cran-httpuv r-cran-jsonlite
+#   Linux Mint (r2u):   see README.md
 #
 # httpuv is required. Without it gargle falls back to the out-of-band
 # sign-in, which Google no longer allows for Desktop clients.
@@ -22,52 +22,18 @@
 # permissions. Later runs reuse the saved token, so
 # `Rscript scripts/smoke_test.R` works after that.
 
-library(gargle)
-
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # Private settings (account, calendar IDs, allowed senders) come from
 # ~/.config/moonrise/config.json. See config.example.json.
 source("R/config.R")
+source("R/google.R")
 cfg <- moonrise_config()
 
-scopes <- c(
-  "https://www.googleapis.com/auth/calendar.events",
-  "https://www.googleapis.com/auth/gmail.readonly"
-)
 write_test <- TRUE
 
-# ---- Sign in ---------------------------------------------------------------
-
-cache_dir <- cfg$token_cache
-dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
-Sys.chmod(cache_dir, mode = "0700")
-
-client <- gargle_oauth_client_from_json(cfg$client_json, name = "moonrise")
-
-token <- gargle2.0_token(
-  email  = cfg$account,
-  client = client,
-  scope  = scopes,
-  cache  = cache_dir
-)
-
-# ---- Helpers ---------------------------------------------------------------
-
-# body = NULL sends no body. An empty list() would go out as "[]", which
-# Google rejects ("Root element must be a message").
-google <- function(method, path, params = list(), body = NULL) {
-  req  <- request_build(method = method, path = path, params = params,
-                        body = body, token = token)
-  resp <- request_make(req)
-  if (method == "DELETE") {
-    if (httr::status_code(resp) >= 300) response_process(resp)
-    return(invisible(TRUE))
-  }
-  response_process(resp)
-}
-
-rfc3339 <- function(x) format(x, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+# Signs in (browser on first run) and returns the request helper.
+google <- moonrise_google(cfg)
 
 check <- function(label, expr, hint) {
   tryCatch({

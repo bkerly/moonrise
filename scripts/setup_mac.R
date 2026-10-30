@@ -14,7 +14,8 @@
 # httpuv matters: without it gargle falls back to the out-of-band sign-in,
 # which Google no longer allows for Desktop clients.
 
-pkgs    <- c("gargle", "httr", "httpuv", "jsonlite")
+pkgs    <- c("gargle", "httr", "httpuv", "jsonlite",   # Google sign-in
+             "DBI", "RSQLite", "later", "rlang")       # sync loop
 missing <- setdiff(pkgs, rownames(installed.packages()))
 if (length(missing)) {
   install.packages(missing, repos = "https://cloud.r-project.org")

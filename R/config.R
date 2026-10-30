@@ -17,7 +17,15 @@ moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
   defaults <- list(
     client_json = "~/.config/moonrise/client_secret.json",
     token_cache = "~/.config/moonrise/tokens",
-    tz          = "America/Denver"
+    data_dir    = "~/.local/share/moonrise",
+    tz          = "America/Denver",
+    family      = list(),
+    sync        = list(
+      every_seconds   = 60,   # how often to check for changes
+      refresh_minutes = 60,   # full window refresh even with no changes
+      days_back       = 31,   # window kept on the wall
+      days_ahead      = 400
+    )
   )
   cfg <- utils::modifyList(defaults, cfg)
 
@@ -41,6 +49,7 @@ moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
 
   cfg$client_json     <- path.expand(cfg$client_json)
   cfg$token_cache     <- path.expand(cfg$token_cache)
+  cfg$data_dir        <- path.expand(cfg$data_dir)
   cfg$allowed_senders <- tolower(cfg$allowed_senders)
   cfg
 }

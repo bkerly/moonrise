@@ -10,9 +10,16 @@ by GitHub Pages for the Google sign-in screen.
 ## Layout
 
 ```
-R/config.R             reads the private config
+R/config.R             reads the private config (and sync defaults)
+R/google.R             Google sign-in and request helper
+R/titles.R             reads initials and "?" from event titles
+R/store.R              local SQLite copy of the calendars
+R/sync.R               keeps the store in step with Google Calendar
 scripts/setup_mac.R    one-time setup on a Mac
 scripts/smoke_test.R   checks sign-in, calendar read/write, inbox read
+scripts/sync_once.R    one sync pass, then prints the next 7 days
+scripts/sync_loop.R    syncs every minute until stopped
+tests/run_tests.R      offline tests with a fake Google
 config.example.json    the fields the private config needs
 ```
 
@@ -45,10 +52,46 @@ This repo is public. Nothing private goes in it. These live in
    **Advanced > Go to Moonrise Calendar (unsafe)**, and allow both
    permissions.
 
+## Sync
+
+```r
+source("scripts/sync_once.R")   # one pass, prints the next 7 days
+```
+
+```sh
+Rscript scripts/sync_loop.R     # runs until Ctrl-C
+```
+
+Each minute the loop asks Google, using a sync token, whether anything
+changed. Usually nothing has, and that costs one small request per
+calendar. When something has changed, and once an hour regardless, it
+fetches the window (31 days back to 400 days ahead) with repeating events
+expanded and replaces the local copy in one transaction. The copy lives in
+`~/.local/share/moonrise/moonrise.sqlite`.
+
+Optional settings in `config.json`, shown with their defaults:
+
+```json
+"data_dir": "~/.local/share/moonrise",
+"sync": { "every_seconds": 60, "refresh_minutes": 60,
+          "days_back": 31, "days_ahead": 400 }
+```
+
+Event titles may start with initials and a dash, for example
+`V N - Swim Lessons`. Initials come from `family` in the config, plus `F`
+for the whole family. A leading `?` marks an import awaiting review.
+
+## Tests
+
+```sh
+Rscript tests/run_tests.R
+```
+
 ## Setup on Linux Mint (the server)
 
 ```sh
-sudo apt install r-cran-gargle r-cran-httr r-cran-httpuv r-cran-jsonlite
+sudo apt install r-cran-gargle r-cran-httr r-cran-httpuv r-cran-jsonlite \
+  r-cran-dbi r-cran-rsqlite r-cran-later r-cran-rlang
 ```
 
 Then copy `~/.config/moonrise/` from the Mac, or put the two files in place
