@@ -103,9 +103,17 @@ attachment_text <- function(a, ocr = TRUE) {
 
 # Runs in a separate R process. Returns list(content, chars, notes).
 import_job <- function(input, opts, family, today, chat = ollama_chat) {
-  notes <- character()
-  text  <- clean_text(input$text)
+  notes  <- character()
+  text   <- clean_text(input$text)
+  images <- list()
   for (a in input$attachments) {
+    # A model that reads images gets photos as they are; OCR is for
+    # models that can't, and does poorly on decorated flyers.
+    if (isTRUE(opts$vision) && startsWith(a$mime, "image/")) {
+      images[[length(images) + 1]] <- jsonlite::base64_enc(a$data)
+      text <- paste0(text, "\n\n(Attached photo: ", a$filename, ")")
+      next
+    }
     t <- tryCatch(attachment_text(a, isTRUE(opts$ocr)),
                   error = function(e) structure("", error = conditionMessage(e)))
     if (!is.null(attr(t, "error"))) {
@@ -122,6 +130,7 @@ import_job <- function(input, opts, family, today, chat = ollama_chat) {
   text   <- focus_text(text, opts$max_chars)
   prompt <- build_prompt(text, input$subject, as.Date(input$sent),
                          as.Date(today), family)
+  prompt$images <- images
   list(content = chat(prompt, import_schema(), opts),
        chars = nchar(text), notes = notes)
 }

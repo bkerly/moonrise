@@ -37,13 +37,15 @@ moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
       enabled         = TRUE,
       every_seconds   = 120,                 # how often to check the inbox
       lookback_days   = 3,                   # only emails this recent
-      model           = "qwen2.5:3b",        # any Ollama model name
+      model           = "qwen3.5:4b",        # any Ollama model name
+      think           = FALSE,               # null = model's default
+      vision          = TRUE,                # send photos to the model
       ollama_url      = "http://localhost:11434",
       keep_alive      = "2m",                # unload the model when idle
       timeout_seconds = 600,
       max_chars       = 4000,                # trim long emails to this
       max_events      = 15,
-      ocr             = TRUE,                # read photos if tesseract is installed
+      ocr             = TRUE,                # OCR photos when vision is off
       calendar        = "family"
     ),
     sync        = list(

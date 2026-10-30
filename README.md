@@ -132,11 +132,14 @@ It needs [Ollama](https://ollama.com) running on the same computer, with
 the model pulled:
 
 ```sh
-ollama pull qwen2.5:3b
+ollama pull qwen3.5:4b
 ```
 
-The server reads PDF attachments (pdftools) and photos (tesseract) when
-those packages are installed. Each email is read in a background R
+The default model, `qwen3.5:4b` (about 4 GB), reads images, so photos
+of flyers go straight to it. Thinking is turned off (`"think": false`),
+since it is slow and reading a date doesn't need it. For a model that
+can't read images, set `"vision": false` and photos go through OCR
+(tesseract) instead. PDF attachments are read with pdftools. Each email is read in a background R
 process, so a slow model doesn't stall the wall page. If Ollama isn't
 running, emails wait until it is.
 
@@ -144,7 +147,8 @@ Settings in `config.json`, shown with their defaults:
 
 ```json
 "import": { "enabled": true, "every_seconds": 120, "lookback_days": 3,
-            "model": "qwen2.5:3b", "ollama_url": "http://localhost:11434",
+            "model": "qwen3.5:4b", "think": false, "vision": true,
+            "ollama_url": "http://localhost:11434",
             "keep_alive": "2m", "timeout_seconds": 600, "max_chars": 4000,
             "max_events": 15, "ocr": true, "calendar": "family" }
 ```

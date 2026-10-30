@@ -604,6 +604,21 @@ test("import: PDF attachment text reaches the model", {
   stopifnot(grepl("Attachment flyer.pdf", last), grepl("Recital Saturday", last))
 })
 
+test("import: photos go to a vision model as images", {
+  png_file <- file.path(tmp, "flyer.png")
+  grDevices::png(png_file); graphics::plot(1); grDevices::dev.off()
+  raw <- readBin(png_file, "raw", file.info(png_file)$size)
+  fk$add_email(fake_email("parent@example.org", "Photo", text = "See photo", sent = now,
+    attachments = list(list(filename = "flyer.png", mime = "image/png", raw = raw,
+                            size = 30000))))
+  icfg$import$vision <<- TRUE
+  run_all()
+  last <- prompts[[length(prompts)]]
+  expect_equal(length(last$images), 1)
+  expect_equal(jsonlite::base64_dec(last$images[[1]])[1:4], as.raw(c(0x89, 0x50, 0x4e, 0x47)))
+  stopifnot(grepl("Attached photo: flyer.png", last$user, fixed = TRUE))
+})
+
 DBI::dbDisconnect(xcon)
 unlink(tmp, recursive = TRUE)
 
