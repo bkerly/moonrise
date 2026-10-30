@@ -4,6 +4,8 @@
 # ~/.config/moonrise/config.json. Set MOONRISE_CONFIG to use another path.
 # See config.example.json for the fields.
 
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
 moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
                                               "~/.config/moonrise/config.json")) {
   path <- path.expand(path)
@@ -30,6 +32,19 @@ moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
     server      = list(
       host = "0.0.0.0",          # listen on the home network
       port = 8080
+    ),
+    import      = list(
+      enabled         = TRUE,
+      every_seconds   = 120,                 # how often to check the inbox
+      lookback_days   = 3,                   # only emails this recent
+      model           = "qwen2.5:3b",        # any Ollama model name
+      ollama_url      = "http://localhost:11434",
+      keep_alive      = "2m",                # unload the model when idle
+      timeout_seconds = 600,
+      max_chars       = 4000,                # trim long emails to this
+      max_events      = 15,
+      ocr             = TRUE,                # read photos if tesseract is installed
+      calendar        = "family"
     ),
     sync        = list(
       every_seconds   = 60,   # how often to check for changes

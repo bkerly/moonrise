@@ -18,8 +18,6 @@
 #
 # Google docs: https://developers.google.com/workspace/calendar/api/guides/sync
 
-`%||%` <- function(a, b) if (is.null(a)) b else a
-
 events_path <- "calendar/v3/calendars/{calendarId}/events"
 
 moonrise_log <- function(fmt, ...) {

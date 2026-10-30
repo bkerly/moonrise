@@ -18,6 +18,69 @@
   <p class="loading">Loading the week…</p>
 </main>
 <footer id="legend" class="legend"></footer>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-box" role="dialog" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <h2 id="sheet-title" class="sheet-title">Add event</h2>
+      <span id="sheet-note" class="sheet-note"></span>
+    </div>
+
+    <div id="form-event">
+      <label class="field">
+        <span class="field-label">What</span>
+        <input id="f-title" class="input" type="text" autocomplete="off" maxlength="200">
+      </label>
+      <div class="field">
+        <span class="field-label">Who</span>
+        <div id="f-who" class="chips"></div>
+      </div>
+      <div class="row">
+        <label class="field grow">
+          <span class="field-label">Day</span>
+          <input id="f-date" class="input" type="date">
+        </label>
+        <label class="check">
+          <input id="f-allday" type="checkbox"> All day
+        </label>
+      </div>
+      <div id="f-times" class="row">
+        <label class="field grow">
+          <span class="field-label">Starts</span>
+          <input id="f-start" class="input" type="time">
+        </label>
+        <label class="field grow">
+          <span class="field-label">Ends</span>
+          <input id="f-end" class="input" type="time">
+        </label>
+      </div>
+      <div id="f-lastday" class="row" hidden>
+        <label class="field grow">
+          <span class="field-label">Last day</span>
+          <input id="f-enddate" class="input" type="date">
+        </label>
+      </div>
+    </div>
+
+    <div id="form-dinner" hidden>
+      <label class="field">
+        <span class="field-label">Dinner</span>
+        <input id="f-dinner" class="input" type="text" autocomplete="off" maxlength="200">
+      </label>
+    </div>
+
+    <p id="sheet-error" class="sheet-error" hidden></p>
+
+    <div class="sheet-buttons">
+      <button id="b-delete" class="btn danger" type="button">Delete</button>
+      <span class="spacer"></span>
+      <button id="b-cancel" class="btn" type="button">Cancel</button>
+      <button id="b-accept" class="btn primary" type="button">Accept</button>
+      <button id="b-save" class="btn primary" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
 <script src="/wall/wall.js"></script>
 </body>
 </html>

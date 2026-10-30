@@ -47,6 +47,21 @@ store_open <- function(cfg) {
       version       INTEGER NOT NULL DEFAULT 0,
       last_error    TEXT
     )")
+  # One row per email the importer has looked at, so it never reads the
+  # same one twice.
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS imports (
+      message_id  TEXT PRIMARY KEY,
+      received    REAL,
+      sender      TEXT,
+      subject     TEXT,
+      status      TEXT,
+      events      INTEGER,
+      event_ids   TEXT,
+      note        TEXT,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      processed   REAL
+    )")
   con
 }
 

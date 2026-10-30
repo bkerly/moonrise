@@ -92,8 +92,23 @@ week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
 
     item <- function(r) {
       cont <- r$all_day == 0 && r$start_ts < a
-      list(
+      local <- function(ts, fmt) {
+        format(as.POSIXct(ts, origin = "1970-01-01", tz = tz), fmt)
+      }
+      edit <- if (r$all_day == 1) {
+        list(date = substr(r$start, 1, 10),
+             end_date = format(as.Date(substr(r$end, 1, 10)) - 1),
+             start_time = "", end_time = "")
+      } else {
+        list(date = local(r$start_ts, "%Y-%m-%d"),
+             end_date = local(r$end_ts, "%Y-%m-%d"),
+             start_time = local(r$start_ts, "%H:%M"),
+             end_time = local(r$end_ts, "%H:%M"))
+      }
+      c(list(
         id       = r$id,
+        calendar = r$calendar,
+        repeats  = !is.na(r$recurring_id),
         title    = r$title,
         who      = r$who,
         color    = r$color,
@@ -103,7 +118,7 @@ week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
                      clock_label(r$start_ts, tz),
         location = r$location,
         past     = r$end_ts <= now_ts
-      )
+      ), edit)
     }
     rows <- function(d) lapply(seq_len(nrow(d)), function(i) item(d[i, ]))
 

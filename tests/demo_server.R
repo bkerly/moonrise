@@ -1,12 +1,16 @@
 # tests/demo_server.R
 #
-# Serves the wall page with made-up events and no Google sign-in, for
-# trying layout changes. Uses a throwaway store in a temp folder.
+# Serves the wall page with made-up events and a fake Google, so you can
+# try the page, including adding and editing events, without signing in.
+# A sample forwarded email is "imported" a few seconds after start, with a
+# canned model answer, so a Review item appears. Nothing touches your real
+# calendars, and everything is gone when you stop it.
 #
 # From the repo folder:   Rscript tests/demo_server.R [port]
 # Then open http://localhost:8080/
 
 for (f in list.files("R", "\\.R$", full.names = TRUE)) source(f)
+source("tests/fake_google.R")
 
 args <- commandArgs(TRUE)
 port <- if (length(args)) as.integer(args[1]) else 8080L
@@ -17,60 +21,70 @@ cfg_path <- file.path(tmp, "config.json")
 writeLines('{
   "account": "demo@gmail.com",
   "calendars": { "family": "fam@group", "dinner": "din@group" },
-  "allowed_senders": ["demo@gmail.com"],
+  "allowed_senders": ["parent@demo.org"],
   "family": { "B": "Parent B", "K": "Parent K", "V": "Kid V",
               "N": "Kid N", "A": "Kid A" },
-  "adults": ["B", "K"]
+  "adults": ["B", "K"],
+  "import": { "every_seconds": 5 }
 }', cfg_path)
 cfg <- moonrise_config(cfg_path)
 cfg$data_dir <- file.path(tmp, "data")
 con <- store_open(cfg)
+fk  <- fake_google(unlist(cfg$calendars))
 
 # ---- Made-up week ----------------------------------------------------------
 
 tz    <- cfg$tz
 today <- as.Date(Sys.time(), tz = tz)
 at <- function(day, hm) {
-  format(as.POSIXct(paste(format(today + day), hm), tz = tz),
-         "%Y-%m-%dT%H:%M:%S%z")
+  list(dateTime = paste0(format(today + day), "T", hm, ":00"), timeZone = tz)
 }
-timed <- function(id, title, day, from, to) {
-  list(id = id, status = "confirmed", summary = title,
-       start = list(dateTime = at(day, from)), end = list(dateTime = at(day, to)))
+timed <- function(title, day, from, to) {
+  invisible(fk$google("POST", events_path, params = list(calendarId = "fam@group"),
+            body = list(summary = title, start = at(day, from), end = at(day, to))))
 }
-allday <- function(id, title, day, days = 1) {
-  list(id = id, status = "confirmed", summary = title,
-       start = list(date = format(today + day)),
-       end = list(date = format(today + day + days)))
+allday <- function(cal, title, day, days = 1) {
+  invisible(fk$google("POST", events_path, params = list(calendarId = cal),
+            body = list(summary = title, start = list(date = format(today + day)),
+                        end = list(date = format(today + day + days)))))
 }
 
-family <- list(
-  timed("1", "V N - Swim Lessons", 0, "08:00", "09:00"),
-  timed("2", "K - Dentist", 0, "10:30", "11:15"),
-  timed("3", "A - Preschool pickup", 0, "15:00", "15:15"),
-  timed("4", "? Book fair volunteer shift", 0, "17:30", "18:30"),
-  allday("5", "F - Grandma visiting", 1, 3),
-  timed("6", "V - Soccer practice", 1, "16:00", "17:15"),
-  timed("7", "B - Hyrox class", 2, "06:00", "07:00"),
-  timed("8", "N - Piano", 2, "15:30", "16:00"),
-  timed("9", "B K - Date night", 3, "19:00", "22:00"),
-  timed("10", "? V - Birthday party at the climbing gym", 4, "13:00", "15:00"),
-  timed("11", "F - Pumpkin patch", 5, "10:00", "12:00"),
-  timed("12", "N A - Library story time", 5, "10:30", "11:15"),
-  timed("13", "Trash night", 6, "19:00", "19:15"),
-  timed("14", "K - Long run", 6, "07:00", "08:30")
-)
-dinner <- list(
-  allday("d0", "Tacos", 0), allday("d1", "Leftovers", 1),
-  allday("d2", "Sheet-pan chicken and potatoes", 2),
-  allday("d4", "Pizza night", 4), allday("d5", "Chili", 5)
-)
-store_replace_events(con, "family", event_rows(family, cfg))
-store_replace_events(con, "dinner", event_rows(dinner, cfg))
-for (cal in c("family", "dinner")) {
-  store_set_state(con, cal, last_check = as.numeric(Sys.time()))
+timed("V N - Swim Lessons", 0, "08:00", "09:00")
+timed("K - Dentist", 0, "10:30", "11:15")
+timed("A - Preschool pickup", 0, "15:00", "15:15")
+allday("fam@group", "F - Grandma visiting", 1, 3)
+timed("V - Soccer practice", 1, "16:00", "17:15")
+timed("B - Hyrox class", 2, "06:00", "07:00")
+timed("N - Piano", 2, "15:30", "16:00")
+timed("B K - Date night", 3, "19:00", "22:00")
+timed("F - Pumpkin patch", 5, "10:00", "12:00")
+timed("N A - Library story time", 5, "10:30", "11:15")
+timed("Trash night", 6, "19:00", "19:15")
+timed("K - Long run", 6, "07:00", "08:30")
+for (d in c(0, 1, 2, 4, 5)) {
+  allday("din@group", c("Tacos", "Leftovers", "Sheet-pan chicken", "", "Pizza night",
+                        "Chili")[d + 1], d)
 }
+
+# ---- A forwarded email and a canned model answer ---------------------------
+
+party_day <- today + 4
+fk$add_email(fake_email(
+  "Parent <parent@demo.org>", "Fwd: Birthday party!",
+  text = sprintf("You're invited to Maya's birthday at the climbing gym, %s from 1 to 3.",
+                 format(party_day, "%A, %B %d")),
+  sent = Sys.time()))
+demo_chat <- function(prompt, schema, opts) {
+  Sys.sleep(2)   # pretend to think
+  jsonlite::toJSON(list(events = list(list(
+    title = "Maya's birthday party", date = format(party_day),
+    start_time = "13:00", end_time = "15:00", who = list("V"),
+    weekday = format(party_day, "%A"), quote = "climbing gym"))), auto_unbox = TRUE)
+}
+
+start_sync_loop(fk$google, con, cfg)
+start_import_loop(fk$google, con, cfg, runner = inline_runner(demo_chat))
 
 cat(sprintf("Demo wall page: http://localhost:%d/\n", port))
-plumber::pr_run(moonrise_router(cfg, con), host = "127.0.0.1", port = port,
-                docs = FALSE, quiet = TRUE)
+plumber::pr_run(moonrise_router(cfg, con, fk$google), host = "127.0.0.1",
+                port = port, docs = FALSE, quiet = TRUE)

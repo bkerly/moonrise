@@ -6,6 +6,7 @@
 # From the repo folder:   Rscript tests/run_tests.R
 
 for (f in list.files("R", "\\.R$", full.names = TRUE)) source(f)
+source("tests/fake_google.R")
 
 passed <- 0
 failed <- 0
@@ -115,7 +116,7 @@ test("event rows: no items", {
 
 # Holds per-calendar events and a list of pending changes. Records every
 # call so tests can count them.
-fake_google <- function() {
+fake_sync_google <- function() {
   env <- new.env()
   env$events  <- list(fam = list(), din = list())
   env$changes <- list(fam = 0, din = 0)
@@ -167,7 +168,7 @@ window_calls <- function(fg) sum(vapply(fg$calls, function(p) !is.null(p$timeMin
 # ---- Sync flow -------------------------------------------------------------
 
 con <- store_open(cfg)
-fg  <- fake_google()
+fg  <- fake_sync_google()
 t0  <- as.POSIXct("2026-11-01 08:00:00", tz = "America/Denver")
 fg$events$fam <- list(ev("e1", "V - Swim", "11-02"), ev("e2", "K - Dentist", "11-03"),
                       ev("e3", "F - Zoo", "11-04"))
@@ -372,6 +373,238 @@ test("week: version counts all calendars", {
 })
 
 DBI::dbDisconnect(wcon)
+
+# ---- Forms -----------------------------------------------------------------
+
+expect_error <- function(code, pattern) {
+  msg <- tryCatch({ force(code); "" }, error = function(e) conditionMessage(e))
+  if (!grepl(pattern, msg)) stop(sprintf("wanted error /%s/, got '%s'", pattern, msg), call. = FALSE)
+}
+
+test("forms: required fields and friendly errors", {
+  expect_error(clean_form(list(title = "", date = "2026-11-02"), wcfg), "Add a title")
+  expect_error(clean_form(list(title = "x", date = "11/2"), wcfg), "Pick a date")
+  expect_error(clean_form(list(title = "x", date = "2026-11-02", start_time = "25:00"), wcfg),
+               "start time")
+  expect_error(clean_form(list(title = "x", date = "2026-11-05", all_day = TRUE,
+                               end_date = "2026-11-02"), wcfg), "last day")
+})
+
+test("forms: times, overnight, all-day, who", {
+  f <- clean_form(list(title = " Swim ", who = list("V", "N", "Q"), date = "2026-11-02",
+                       start_time = "16:00"), wcfg)
+  expect_equal(f$title, "Swim")
+  expect_equal(f$who, c("V", "N"))
+  expect_equal(c(f$end_date, f$end_time), c("2026-11-02", "17:00"))
+  f <- clean_form(list(title = "Party", date = "2026-11-02", start_time = "22:00",
+                       end_time = "01:00"), wcfg)
+  expect_equal(c(f$end_date, f$end_time), c("2026-11-03", "01:00"))
+  f <- clean_form(list(title = "Trip", who = list("F", "V"), date = "2026-11-02",
+                       all_day = TRUE, end_date = "2026-11-04"), wcfg)
+  expect_equal(f$who, "F")
+  b <- event_body(f, wcfg)
+  expect_equal(b$summary, "F - Trip")
+  expect_equal(b$end$date, "2026-11-05")
+  b <- event_body(clean_form(list(title = "Dentist", who = list("K"), date = "2026-11-02",
+                                  start_time = "9:05", pending = TRUE), wcfg), wcfg)
+  expect_equal(b$summary, "? K - Dentist")
+  expect_equal(b$start, list(dateTime = "2026-11-02T09:05:00", timeZone = "America/Denver"))
+})
+
+# ---- Writes through the fake Google ----------------------------------------
+
+wcfg$data_dir <- file.path(tmp, "writes")
+xcon <- store_open(wcfg)
+fk   <- fake_google(unlist(wcfg$calendars))
+g    <- fk$google
+for (cal in names(wcfg$calendars)) sync_calendar(g, xcon, wcfg, cal)
+row_of <- function(title) {
+  DBI::dbGetQuery(xcon, "SELECT * FROM events WHERE title = ?", params = list(title))
+}
+
+test("writes: add, change, accept, delete", {
+  event_insert(g, wcfg, "family", event_body(clean_form(list(
+    title = "Swim", who = list("V"), date = "2026-11-02", start_time = "16:00",
+    pending = TRUE), wcfg), wcfg))
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- row_of("Swim")
+  expect_equal(c(r$who, r$pending, r$raw_title), c("V", "1", "? V - Swim"))
+  expect_equal(r$start_ts, as.numeric(as.POSIXct("2026-11-02 16:00", tz = tz)))
+
+  event_patch(g, wcfg, "family", r$id, event_body(clean_form(list(
+    title = "Swim lessons", who = list("V", "N"), date = "2026-11-02",
+    start_time = "16:30", pending = TRUE), wcfg), wcfg))
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- row_of("Swim lessons")
+  expect_equal(c(r$who, r$pending), c("V N", "1"))
+
+  event_accept(g, wcfg, xcon, "family", r$id)
+  sync_calendar(g, xcon, wcfg, "family")
+  expect_equal(row_of("Swim lessons")$raw_title, "V N - Swim lessons")
+
+  event_delete(g, wcfg, "family", r$id)
+  sync_calendar(g, xcon, wcfg, "family")
+  expect_equal(nrow(row_of("Swim lessons")), 0)
+})
+
+test("writes: dinner set, change, clear", {
+  dinner_titles <- function() {
+    DBI::dbGetQuery(xcon, "SELECT title FROM events WHERE calendar = 'dinner'")$title
+  }
+  set_dinner(g, wcfg, xcon, "2026-11-03", "Tacos")
+  sync_calendar(g, xcon, wcfg, "dinner")
+  expect_equal(dinner_titles(), "Tacos")
+  set_dinner(g, wcfg, xcon, "2026-11-03", "Chili")
+  sync_calendar(g, xcon, wcfg, "dinner")
+  expect_equal(dinner_titles(), "Chili")
+  set_dinner(g, wcfg, xcon, "2026-11-03", "  ")
+  sync_calendar(g, xcon, wcfg, "dinner")
+  expect_equal(length(dinner_titles()), 0)
+})
+
+test("writes: accept on a vanished event says so", {
+  expect_error(event_accept(g, wcfg, xcon, "family", "nope"), "gone")
+})
+
+# ---- Email text --------------------------------------------------------------
+
+test("email text: HTML only, entities, blocks", {
+  m <- fake_email("a@b.c", "Hi", html = paste0(
+    "<html><head><style>p{}</style></head><body><p>Swim &amp; dive</p>",
+    "<div>Saturday<br>Nov 7</div><script>x()</script></body></html>"))
+  expect_equal(message_text(gmail_parts(m$payload)), "Swim & dive\nSaturday\nNov 7")
+})
+
+test("email text: plain preferred, quotes and signature dropped", {
+  m <- fake_email("a@b.c", "Hi", text = "Party Sat 2pm\n> old reply\nThanks\n-- \nBrian\n555",
+                  html = "<p>ignored</p>")
+  expect_equal(clean_text(message_text(gmail_parts(m$payload))), "Party Sat 2pm\nThanks")
+})
+
+test("email text: forwarded date and focus", {
+  x <- paste("Hey\n\n---------- Forwarded message ---------",
+             "From: School <s@x.org>\nDate: Mon, Oct 26, 2026 at 3:04 PM",
+             "Subject: Fair\n\nBook fair Thursday", sep = "\n")
+  expect_equal(forwarded_date(x), as.Date("2026-10-26"))
+  expect_equal(forwarded_date("no forward here"), as.Date(NA))
+  long <- paste(c("Intro", rep("Filler words here.", 300), "Concert Nov 12 at 6 pm",
+                  rep("More filler.", 300)), collapse = "\n\n")
+  f <- focus_text(long, 500)
+  stopifnot(grepl("^Intro", f), grepl("Concert Nov 12", f), nchar(f) <= 500)
+})
+
+# ---- Checking model output -------------------------------------------------
+
+test("validate: weekday fix, past, far, dedupe, who", {
+  today <- as.Date("2026-10-30")
+  ev <- list(
+    list(title = "Fair", date = "2026-11-06", weekday = "Thursday",   # Fri -> Thu
+         start_time = "15:00", end_time = "", who = list("v", "Z"), quote = "Thursday"),
+    list(title = "Old", date = "2026-10-01", weekday = "", start_time = "", end_time = "",
+         who = list(), quote = ""),
+    list(title = "Far", date = "2028-01-01", weekday = "", start_time = "", end_time = "",
+         who = list(), quote = ""),
+    list(title = "Fair", date = "2026-11-06", weekday = "Thursday", start_time = "15:00",
+         end_time = "", who = list(), quote = ""),
+    list(title = "", date = "2026-11-06"),
+    list(title = "Trip", date = "2026-11-20", end_date = "2026-11-22", weekday = "",
+         start_time = "", end_time = "", who = list("F"), quote = "Nov 20-22")
+  )
+  v <- validate_events(ev, wcfg, today, today)
+  expect_equal(length(v$forms), 2)
+  expect_equal(v$forms[[1]]$date, "2026-11-05")
+  expect_equal(v$forms[[1]]$who, "V")
+  stopifnot(grepl("moved", v$forms[[1]]$adjust))
+  expect_equal(v$forms[[2]]$all_day, TRUE)
+  expect_equal(v$forms[[2]]$end_date, "2026-11-22")
+  expect_equal(length(v$notes), 3)
+})
+
+# ---- Import pipeline -------------------------------------------------------
+
+icfg <- wcfg
+icfg$allowed_senders <- "parent@example.org"
+icfg$import$max_chars <- 4000
+prompts <- list()
+ollama_back <- FALSE
+canned  <- '{"events": [{"title": "Book fair", "date": "2026-11-05", "start_time": "15:00",
+  "end_time": "16:00", "who": ["V"], "weekday": "Thursday", "quote": "Thursday, Nov 5 at 3"}]}'
+fake_chat <- function(prompt, schema, opts) {
+  prompts[[length(prompts) + 1]] <<- prompt
+  if (grepl("NOTHING", prompt$user)) return('{"events": []}')
+  if (grepl("GARBLE", prompt$user)) return("not json")
+  if (grepl("DOWN", prompt$user) && !ollama_back) stop(paste(ollama_unreachable, "at test."))
+  canned
+}
+now   <- as.POSIXct("2026-10-30 12:00", tz = tz)
+state <- new.env()
+run_all <- function(runner = inline_runner(fake_chat)) {
+  for (i in 1:20) if (!import_tick(g, xcon, icfg, state, runner, now = now)) break
+}
+imports <- function() DBI::dbGetQuery(xcon, "SELECT * FROM imports ORDER BY processed")
+
+test("import: adds events for review from an allowed sender", {
+  fk$add_email(fake_email("Parent <Parent@Example.org>", "Fwd: Book fair",
+    text = "Book fair Thursday, Nov 5 at 3", sent = now))
+  fk$add_email(fake_email("Google <no-reply@accounts.google.com>", "Security alert",
+    text = "Something", sent = now))
+  run_all()
+  im <- imports()
+  expect_equal(sort(im$status), c("added", "ignored"))
+  r <- row_of("Book fair")
+  expect_equal(c(r$who, r$pending), c("V", "1"))
+  stopifnot(grepl("Fwd: Book fair", r$description), grepl("Thursday, Nov 5", r$description))
+  stopifnot(grepl("Today is Friday, October 30, 2026", prompts[[1]]$system))
+  stopifnot(grepl("V = ", prompts[[1]]$system))
+  expect_equal(length(prompts), 1)   # the ignored email never reached the model
+})
+
+test("import: never reads the same email twice", {
+  n <- length(prompts)
+  run_all()
+  expect_equal(length(prompts), n)
+})
+
+test("import: no events, then bad JSON retried 3 times", {
+  fk$add_email(fake_email("parent@example.org", "Newsletter", text = "NOTHING to see", sent = now))
+  fk$add_email(fake_email("parent@example.org", "Weird", text = "GARBLE", sent = now))
+  run_all()
+  im <- imports()
+  expect_equal(im$status[im$subject == "Newsletter"], "no events")
+  expect_equal(im$status[im$subject == "Weird"], "error")
+  expect_equal(im$attempts[im$subject == "Weird"], 3)
+})
+
+test("import: Ollama down leaves the email for later", {
+  fk$add_email(fake_email("parent@example.org", "Later", text = "DOWN", sent = now))
+  out <- capture.output(run_all())
+  im <- imports()
+  stopifnot(is.na(im$status[im$subject == "Later"]))
+  stopifnot(sum(grepl("not reachable", out)) == 1)
+})
+
+test("import: when Ollama is back, the waiting email goes through", {
+  ollama_back <<- TRUE
+  capture.output(run_all())
+  im <- imports()
+  expect_equal(im$status[im$subject == "Later"], "added")
+})
+
+test("import: PDF attachment text reaches the model", {
+  pdf_path <- file.path(tmp, "flyer.pdf")
+  grDevices::pdf(pdf_path)
+  graphics::plot.new()
+  graphics::text(0.5, 0.5, "Recital Saturday November 7 at 3 pm")
+  grDevices::dev.off()
+  raw <- readBin(pdf_path, "raw", file.info(pdf_path)$size)
+  fk$add_email(fake_email("parent@example.org", "Flyer", text = "See attached", sent = now,
+    attachments = list(list(filename = "flyer.pdf", mime = "application/pdf", raw = raw))))
+  run_all()
+  last <- prompts[[length(prompts)]]$user
+  stopifnot(grepl("Attachment flyer.pdf", last), grepl("Recital Saturday", last))
+})
+
+DBI::dbDisconnect(xcon)
 unlink(tmp, recursive = TRUE)
 
 cat(sprintf("\n%d passed, %d failed\n", passed, failed))

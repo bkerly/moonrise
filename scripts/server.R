@@ -1,6 +1,7 @@
 # scripts/server.R
 #
-# Runs the sync loop and the wall page server in one process.
+# Runs the sync loop, the email importer and the wall page server in one
+# process.
 #
 # In a terminal, from the repo folder:
 #   Rscript scripts/server.R
@@ -18,6 +19,13 @@ con    <- store_open(cfg)
 
 start_sync_loop(google, con, cfg)
 
+if (isTRUE(cfg$import$enabled)) {
+  moonrise_log("email import: model %s at %s, every %d s",
+               cfg$import$model, cfg$import$ollama_url,
+               as.integer(cfg$import$every_seconds))
+  start_import_loop(google, con, cfg)
+}
+
 port <- as.integer(cfg$server$port)
 ip   <- lan_address()
 moonrise_log("wall page on this computer: http://localhost:%d/", port)
@@ -25,5 +33,5 @@ if (!is.null(ip)) {
   moonrise_log("wall page on the home network: http://%s:%d/", ip, port)
 }
 
-plumber::pr_run(moonrise_router(cfg, con), host = cfg$server$host,
+plumber::pr_run(moonrise_router(cfg, con, google), host = cfg$server$host,
                 port = port, docs = FALSE, quiet = TRUE)

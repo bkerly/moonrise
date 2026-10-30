@@ -16,7 +16,8 @@
 
 pkgs    <- c("gargle", "httr", "httpuv", "jsonlite",   # Google sign-in
              "DBI", "RSQLite", "later", "rlang",       # sync loop
-             "plumber")                                # wall page server
+             "plumber",                                # wall page server
+             "callr", "xml2", "pdftools", "tesseract") # email import
 missing <- setdiff(pkgs, rownames(installed.packages()))
 if (length(missing)) {
   install.packages(missing, repos = "https://cloud.r-project.org")

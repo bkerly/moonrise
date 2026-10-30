@@ -17,14 +17,19 @@ R/store.R              local SQLite copy of the calendars
 R/sync.R               keeps the store in step with Google Calendar
 R/wall.R               week view: days, labels, colors
 R/server.R             web server for the wall page and its API
+R/events.R             forms to Google events; add, change, accept, delete
+R/extract.R            email to text; prompt; checking the model's answer
+R/ollama.R             calls the local Ollama model
+R/import.R             email import loop
 www/                   the wall page (plain ES5 + flexbox for old tablets)
 scripts/setup_mac.R    one-time setup on a Mac
 scripts/smoke_test.R   checks sign-in, calendar read/write, inbox read
 scripts/sync_once.R    one sync pass, then prints the next 7 days
 scripts/sync_loop.R    syncs every minute until stopped (no web server)
-scripts/server.R       sync loop plus the wall page, in one process
+scripts/server.R       sync, email import and the wall page, in one process
 tests/run_tests.R      offline tests with a fake Google
-tests/demo_server.R    wall page with made-up events, no Google needed
+tests/fake_google.R    in-memory Google Calendar and Gmail for tests
+tests/demo_server.R    wall page with a fake Google, editing and a sample import
 config.example.json    the fields the private config needs
 ```
 
@@ -106,7 +111,43 @@ Colors follow these rules, using `adults` and `colors` from the config
 - `F`, or all the adults: the "family" color
 - no initials: gray
 
-To try layout changes without Google: `Rscript tests/demo_server.R`.
+Tap an event to change, accept or delete it (delete takes a second
+tap). Tap **+** on a day to add an event, or the dinner row to set that
+night's dinner. Changes go to Google first, then show on the wall. For
+a repeating event, a change applies to that day only.
+
+To try the page without Google: `Rscript tests/demo_server.R`. Edits work
+against a fake calendar, and a sample email is imported after a few
+seconds.
+
+## Email import
+
+Forward an email to the import account from an address in
+`allowed_senders`. Within a couple of minutes its events appear on the
+wall tagged **Review**. Tap one to check it, then **Accept** (or edit,
+or delete). The event's description in Google Calendar quotes the line
+of the email it came from.
+
+It needs [Ollama](https://ollama.com) running on the same computer, with
+the model pulled:
+
+```sh
+ollama pull qwen2.5:3b
+```
+
+The server reads PDF attachments (pdftools) and photos (tesseract) when
+those packages are installed. Each email is read in a background R
+process, so a slow model doesn't stall the wall page. If Ollama isn't
+running, emails wait until it is.
+
+Settings in `config.json`, shown with their defaults:
+
+```json
+"import": { "enabled": true, "every_seconds": 120, "lookback_days": 3,
+            "model": "qwen2.5:3b", "ollama_url": "http://localhost:11434",
+            "keep_alive": "2m", "timeout_seconds": 600, "max_chars": 4000,
+            "max_events": 15, "ocr": true, "calendar": "family" }
+```
 
 Fonts are Atkinson Hyperlegible and DM Serif Display (SIL Open Font
 License), served from `www/fonts` so the tablet needs no internet.
@@ -121,7 +162,8 @@ Rscript tests/run_tests.R
 
 ```sh
 sudo apt install r-cran-gargle r-cran-httr r-cran-httpuv r-cran-jsonlite \
-  r-cran-dbi r-cran-rsqlite r-cran-later r-cran-rlang r-cran-plumber
+  r-cran-dbi r-cran-rsqlite r-cran-later r-cran-rlang r-cran-plumber \
+  r-cran-callr r-cran-xml2 r-cran-pdftools r-cran-tesseract
 ```
 
 Then copy `~/.config/moonrise/` from the Mac, or put the two files in place

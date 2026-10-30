@@ -2,14 +2,27 @@
 #
 # The web server the wall tablet and phones talk to. It runs in the same
 # R process as the sync loop: plumber drives the `later` event loop, so
-# the sync timer keeps firing between requests.
+# the sync and import timers keep firing between requests.
 #
-#   GET /             redirects to /wall/
-#   GET /wall/        the wall page (files in www/)
-#   GET /api/version  small; the page polls it to know when to redraw
-#   GET /api/week     the week view; ?start=YYYY-MM-DD (default today)
+#   GET    /                               redirects to /wall/
+#   GET    /wall/                          the wall page (files in www/)
+#   GET    /api/version                    polled to know when to redraw
+#   GET    /api/week?start=YYYY-MM-DD      the week view
+#   POST   /api/events                     add an event
+#   PATCH  /api/events/<calendar>/<id>     change an event
+#   POST   /api/events/<calendar>/<id>/accept   remove the "?"
+#   DELETE /api/events/<calendar>/<id>     delete an event
+#   PUT    /api/dinner/<date>              set or clear one night's dinner
+#
+# Writes go to Google first; then that calendar is synced at once, so the
+# local copy never disagrees with Google.
+#
+# Writes must carry the header "X-Moonrise: 1". Browsers won't send a
+# custom header to another site without asking first, and this server
+# never says yes, so a web page elsewhere can't use a visitor's browser to
+# change the calendar.
 
-moonrise_router <- function(cfg, con, www = "www") {
+moonrise_router <- function(cfg, con, google = NULL, www = "www") {
   json <- plumber::serializer_unboxed_json(na = "null")
 
   pr <- plumber::pr()
@@ -39,7 +52,83 @@ moonrise_router <- function(cfg, con, www = "www") {
     week_payload(con, cfg, start = day)
   }, serializer = json)
 
+  # ---- Writes --------------------------------------------------------------
+
+  # Runs a write, then syncs the calendar it touched. Turns errors into
+  # a 400 with a message the page can show.
+  write <- function(req, res, calendar, fn) {
+    res$setHeader("Cache-Control", "no-store")
+    if (!identical(req$HTTP_X_MOONRISE, "1")) {
+      res$status <- 403
+      return(list(error = "Missing X-Moonrise header."))
+    }
+    if (is.null(google)) {
+      res$status <- 503
+      return(list(error = "This server can't write to Google."))
+    }
+    tryCatch({
+      if (!calendar %in% names(cfg$calendars)) {
+        stop("Unknown calendar: ", calendar, call. = FALSE)
+      }
+      fn()
+      sync_calendar(google, con, cfg, calendar)
+      list(ok = TRUE, version = store_version(con)$version)
+    }, error = function(e) {
+      res$status <- 400
+      list(error = google_message(conditionMessage(e)))
+    })
+  }
+
+  body_of <- function(req) {
+    b <- req$body
+    if (is.null(b) || !is.list(b)) list() else b
+  }
+
+  pr <- plumber::pr_post(pr, "/api/events", function(req, res) {
+    b   <- body_of(req)
+    cal <- as.character(b$calendar %||% "family")
+    write(req, res, cal, function() {
+      event_insert(google, cfg, cal, event_body(clean_form(b, cfg), cfg))
+    })
+  }, serializer = json)
+
+  pr <- plumber::pr_handle(pr, "PATCH", "/api/events/<calendar>/<id>",
+    function(req, res, calendar, id) {
+      b <- body_of(req)
+      write(req, res, calendar, function() {
+        event_patch(google, cfg, calendar, id, event_body(clean_form(b, cfg), cfg))
+      })
+    }, serializer = json)
+
+  pr <- plumber::pr_post(pr, "/api/events/<calendar>/<id>/accept",
+    function(req, res, calendar, id) {
+      write(req, res, calendar, function() {
+        event_accept(google, cfg, con, calendar, id)
+      })
+    }, serializer = json)
+
+  pr <- plumber::pr_delete(pr, "/api/events/<calendar>/<id>",
+    function(req, res, calendar, id) {
+      write(req, res, calendar, function() {
+        event_delete(google, cfg, calendar, id)
+      })
+    }, serializer = json)
+
+  pr <- plumber::pr_put(pr, "/api/dinner/<date>", function(req, res, date) {
+    b <- body_of(req)
+    write(req, res, "dinner", function() {
+      set_dinner(google, cfg, con, date, as.character(b$title %||% ""))
+    })
+  }, serializer = json)
+
   plumber::pr_static(pr, "/wall", www)
+}
+
+# Google's error text is long; keep the part a person can use.
+google_message <- function(msg) {
+  msg <- sub("(?s)^Client error: \\(\\d+\\)[^\\n]*\\n", "", msg, perl = TRUE)
+  msg <- strsplit(msg, "\n", fixed = TRUE)[[1]][1]
+  if (is.na(msg) || !nzchar(msg)) "Something went wrong." else msg
 }
 
 # Best guess at this machine's address on the home network, for the
