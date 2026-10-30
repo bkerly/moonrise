@@ -564,3 +564,51 @@ select.input {
   .row .grow { -webkit-flex: 1 1 140px; flex: 1 1 140px; }
   .btn { min-width: 0; padding: 0 12px; }
 }
+
+/* ---- Review button and list ---------------------------------------- */
+
+.review-btn {
+  height: 34px;
+  margin-left: 12px;
+  padding: 0 14px;
+  border: 1px dashed #6B665E;
+  border-radius: 17px;
+  background: #FFFFFF;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1D1B18;
+  cursor: pointer;
+  -webkit-align-self: center;
+  align-self: center;
+}
+
+.review-btn[hidden] { display: none; }
+
+.review-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.review-list[hidden] { display: none; }
+
+.review-item {
+  border-left: 5px solid #8A8A8A;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.review-when {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4A4640;
+}
+
+.review-title {
+  display: block;
+  font-size: 17px;
+  font-weight: 500;
+}

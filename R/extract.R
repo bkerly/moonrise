@@ -173,6 +173,35 @@ import_schema <- function() {
 
 long_date <- function(d) sub(" 0", " ", format(d, "%A, %B %d, %Y"))
 
+# Two weeks of dates from the day the email was sent. Small models look
+# dates up far more reliably than they count days.
+day_table <- function(sent, days = 14) {
+  d <- sent + 0:(days - 1)
+  lines <- sprintf("%s %s", format(d, "%A"), format(d))
+  lines[1] <- paste(lines[1], "(the day the email was sent)")
+  paste(lines, collapse = "\n")
+}
+
+# The date that "today", "tonight", "tomorrow" or "this Saturday" points
+# to, counted from the day the email was sent. NA if the text has none of
+# these, or several that disagree.
+relative_date <- function(text, sent) {
+  t <- tolower(text %||% "")
+  hits <- as.Date(character())
+  if (grepl("\\b(today|tonight|this (morning|afternoon|evening))\\b", t, perl = TRUE)) {
+    hits <- c(hits, sent)
+  }
+  if (grepl("\\btomorrow\\b", t, perl = TRUE)) hits <- c(hits, sent + 1)
+  m <- regmatches(t, gregexpr("\\bthis (sun|mon|tue|wed|thu|fri|sat)[a-z]*\\b", t, perl = TRUE))[[1]]
+  for (w in m) {
+    wd   <- weekday_number(sub("^this ", "", w))
+    next7 <- sent + 0:6
+    hits <- c(hits, next7[as.POSIXlt(next7)$wday == wd])
+  }
+  hits <- unique(hits)
+  if (length(hits) == 1) hits else as.Date(NA)
+}
+
 # Returns list(system = ..., user = ...).
 build_prompt <- function(text, subject, sent, today, family) {
   people <- paste(sprintf("%s = %s", names(family), unlist(family)),
@@ -186,7 +215,8 @@ build_prompt <- function(text, subject, sent, today, family) {
     "- Only include events with a specific day. Skip deadlines with no event, ",
     "ads, and anything already over.\n",
     "- Work out words like \"this Saturday\" or \"tomorrow\" from the day the ",
-    "email was sent.\n",
+    "email was sent, using the calendar below. \"This Saturday\" is the first ",
+    "Saturday on or after that day.\n",
     "- date and end_date are YYYY-MM-DD. end_date is the last day of a ",
     "multi-day event, otherwise \"\".\n",
     "- start_time and end_time are 24-hour HH:MM. Use \"\" for all-day events ",
@@ -198,6 +228,7 @@ build_prompt <- function(text, subject, sent, today, family) {
     "\"Saturday\", or \"\" if it gives none.\n",
     "- quote copies the exact words from the email that give the date.\n",
     "- If there are no events, return {\"events\": []}.\n\n",
+    "Calendar:\n", day_table(sent), "\n\n",
     "Answer with JSON matching this schema:\n",
     jsonlite::toJSON(import_schema(), auto_unbox = TRUE)
   )
@@ -230,10 +261,19 @@ validate_events <- function(events, cfg, today, sent, max_events = 15) {
     d <- as.Date(date)
     adjust <- ""
 
+    # "Today", "tomorrow" and "this Saturday" have one right answer, so R
+    # settles them instead of trusting the model's arithmetic.
+    rel <- relative_date(str(e$quote), sent)
+    if (!is.na(rel) && rel != d) {
+      adjust <- sprintf("Date set to %s from \"%s\" in the email (the model said %s).",
+                        format(rel), str(e$quote), format(d))
+      d <- rel
+    }
+
     # Small models slip on date arithmetic more than on copying a day
     # name, so a stated weekday wins when it is close.
     wd <- weekday_number(str(e$weekday))
-    if (!is.na(wd) && as.POSIXlt(d)$wday != wd) {
+    if (is.na(rel) && !is.na(wd) && as.POSIXlt(d)$wday != wd) {
       near <- d + c(-1, 1, -2, 2, -3, 3)
       hit  <- near[as.POSIXlt(near)$wday == wd]
       if (length(hit)) {

@@ -136,9 +136,17 @@ seconds.
 
 Forward an email to the import account from an address in
 `allowed_senders`. Within a couple of minutes its events appear on the
-wall tagged **Review**. Tap one to check it, then **Accept** (or edit,
-or delete). The event's description in Google Calendar quotes the line
-of the email it came from.
+wall tagged **Review**, and a "1 to review" button at the top lists every
+event awaiting review, whatever its date (the week only shows seven
+days). Tap one to check it, then **Accept** (or edit, or delete). The
+event's description in Google Calendar quotes the line of the email it
+came from, and notes any date R corrected.
+
+Small models are weak at counting days, so the prompt includes a
+two-week calendar starting from the day the email was sent, and R itself
+settles "today", "tonight", "tomorrow" and "this Saturday" (the first
+Saturday on or after the day the email was sent). The server log names
+the day and time of each event it adds.
 
 It needs [Ollama](https://ollama.com) running on the same computer, with
 the model pulled:

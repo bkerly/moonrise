@@ -16,6 +16,7 @@
   <h1 id="heading" class="heading">Moonrise</h1>
   <div class="top-right">
     <span id="status" class="status" hidden>Can't reach the server</span>
+    <button id="review-btn" class="review-btn" type="button" hidden></button>
     <span id="clock" class="clock"></span>
   </div>
 </header>
@@ -108,6 +109,9 @@
         <span id="f-scope-hint" class="hint"></span>
       </div>
     </div>
+
+    <!-- Everything awaiting review, any date. -->
+    <ul id="review-list" class="review-list" hidden></ul>
 
     <div id="form-dinner" hidden>
       <label class="field">

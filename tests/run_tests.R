@@ -624,6 +624,26 @@ test("email text: forwarded date and focus", {
 
 # ---- Checking model output -------------------------------------------------
 
+test("day words: today, tomorrow, this <weekday>", {
+  sent <- as.Date("2026-10-30")   # a Friday
+  expect_equal(relative_date("this saturday at 1230pm", sent), as.Date("2026-10-31"))
+  expect_equal(relative_date("This Friday", sent), sent)
+  expect_equal(relative_date("tomorrow night", sent), as.Date("2026-10-31"))
+  expect_equal(relative_date("tonight", sent), sent)
+  expect_equal(relative_date("today or tomorrow", sent), as.Date(NA))
+  expect_equal(relative_date("Saturday Nov 7", sent), as.Date(NA))
+  stopifnot(grepl("Saturday 2026-10-31", day_table(sent)))
+})
+
+test("validate: 'this Saturday' beats the model's date", {
+  sent <- as.Date("2026-10-30")
+  v <- validate_events(list(list(title = "Hyrox Sim", date = "2026-11-07",
+    start_time = "12:30", end_time = "14:00", who = list("B"), weekday = "Saturday",
+    quote = "this saturday at 1230pm")), wcfg, sent, sent)
+  expect_equal(v$forms[[1]]$date, "2026-10-31")
+  stopifnot(grepl("model said 2026-11-07", v$forms[[1]]$adjust))
+})
+
 test("validate: weekday fix, past, far, dedupe, who", {
   today <- as.Date("2026-10-30")
   ev <- list(
@@ -686,6 +706,22 @@ test("import: adds events for review from an allowed sender", {
   stopifnot(grepl("Today is Friday, October 30, 2026", prompts[[1]]$system))
   stopifnot(grepl("V = ", prompts[[1]]$system))
   expect_equal(length(prompts), 1)   # the ignored email never reached the model
+})
+
+test("review list: every pending event, any date, not the ended ones", {
+  event_insert(g, wcfg, "family", event_body(clean_form(list(title = "Far concert",
+    who = list("N"), date = "2026-12-15", start_time = "18:30", pending = TRUE), wcfg), wcfg))
+  event_insert(g, wcfg, "family", event_body(clean_form(list(title = "Old thing",
+    date = "2026-10-01", start_time = "09:00", pending = TRUE), wcfg), wcfg))
+  sync_calendar(g, xcon, wcfg, "family")
+  r <- review_items(xcon, wcfg, now = now)
+  titles <- vapply(r, `[[`, "", "title")
+  stopifnot("Far concert" %in% titles, "Book fair" %in% titles, !"Old thing" %in% titles)
+  far <- r[[which(titles == "Far concert")]]
+  expect_equal(far$when, "Tue Dec 15, 6:30 PM")
+  expect_equal(far$date, "2026-12-15")
+  wk <- week_payload(xcon, wcfg, now = now)
+  expect_equal(length(wk$reviews), length(r))
 })
 
 test("import: never reads the same email twice", {

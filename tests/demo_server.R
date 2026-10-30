@@ -80,10 +80,14 @@ fk$add_email(fake_email(
   sent = Sys.time()))
 demo_chat <- function(prompt, schema, opts) {
   Sys.sleep(2)   # pretend to think
-  jsonlite::toJSON(list(events = list(list(
-    title = "Maya's birthday party", date = format(party_day),
-    start_time = "13:00", end_time = "15:00", who = list("V"),
-    weekday = format(party_day, "%A"), quote = "climbing gym"))), auto_unbox = TRUE)
+  jsonlite::toJSON(list(events = list(
+    list(title = "Maya's birthday party", date = format(party_day),
+         start_time = "13:00", end_time = "15:00", who = list("V"),
+         weekday = format(party_day, "%A"), quote = "climbing gym"),
+    # A second one weeks away, to show the Review list beyond this week.
+    list(title = "Winter concert", date = format(today + 20),
+         start_time = "18:30", end_time = "", who = list("N"),
+         weekday = "", quote = "concert"))), auto_unbox = TRUE)
 }
 
 start_sync_loop(fk$google, con, cfg)

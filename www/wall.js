@@ -17,7 +17,7 @@
   var POLL_MS = 15000;
   var REDRAW_MS = 5 * 60 * 1000;  // refresh "past" dimming even when quiet
 
-  var state = { version: null, today: null, people: [], groups: null };
+  var state = { version: null, today: null, people: [], groups: null, reviews: [] };
 
   // ---- Helpers --------------------------------------------------------
 
@@ -178,15 +178,26 @@
     state.people = data.people || [];
     state.groups = data.groups;
     drawLegend(state.people);
+    drawReviewButton(data.reviews || []);
   }
 
-  function loadWeek() {
+  // Imports awaiting review, from any date. The week only shows seven days,
+  // so this is how later ones get checked.
+  function drawReviewButton(reviews) {
+    state.reviews = reviews;
+    var b = $("review-btn");
+    b.hidden = !reviews.length;
+    b.textContent = reviews.length + " to review";
+  }
+
+  function loadWeek(then) {
     getJSON("/api/week", function (err, data) {
       setOnline(!err);
       if (err) return;
       state.version = data.version;
       state.today = data.today;
       drawWeek(data);
+      if (typeof then === "function") then();
     });
   }
 
@@ -413,9 +424,12 @@
     showError("");
     setBusy(false);
     disarmDelete();
-    show("form-event", mode !== "dinner");
+    show("form-event", mode === "add" || mode === "edit");
     show("form-dinner", mode === "dinner");
-    show("b-delete", mode === "edit" || (mode === "dinner" && sheet.day.dinner.length));
+    show("review-list", mode === "reviews");
+    show("b-save", mode !== "reviews");
+    $("b-cancel").textContent = mode === "reviews" ? "Close" : "Cancel";
+    show("b-delete", mode === "edit" || (mode === "dinner" && sheet.day.dinner.length > 0));
     show("b-accept", mode === "edit" && sheet.ev.pending);
     show("f-repeat-box", mode === "add");
     var repeating = mode === "edit" && sheet.ev.repeats;
@@ -446,7 +460,34 @@
     syncAllDay();
   }
 
+  function openReviews() {
+    sheet.ev = null;
+    sheet.day = null;
+    sheet.fromReviews = false;
+    $("sheet-title").textContent = "To review";
+    $("sheet-note").textContent = "Added from email. Tap one to check it.";
+    var list = $("review-list");
+    list.innerHTML = "";
+    for (var i = 0; i < state.reviews.length; i++) {
+      (function (ev) {
+        var li = el("li", "review-item");
+        li.style.borderLeftColor = ev.color;
+        li.style.backgroundColor = tint(ev.color, ev.color === "#000000" ? 0.07 : 0.14);
+        li.appendChild(el("span", "review-when", ev.when));
+        li.appendChild(el("span", "review-title", ev.title || "(no title)"));
+        if (ev.who) li.appendChild(el("span", "ev-who", ev.who));
+        on(li, function () {
+          openEvent(ev);
+          sheet.fromReviews = true;
+        });
+        list.appendChild(li);
+      })(state.reviews[i]);
+    }
+    openSheet("reviews");
+  }
+
   function openNew(day) {
+    sheet.fromReviews = false;
     sheet.ev = null;
     sheet.day = day;
     var start = "09:00";
@@ -463,6 +504,7 @@
   }
 
   function openEvent(ev) {
+    sheet.fromReviews = false;
     sheet.ev = ev;
     sheet.day = null;
     $("sheet-title").textContent = ev.pending ? "Review event" : "Change event";
@@ -473,6 +515,7 @@
   }
 
   function openDinner(day) {
+    sheet.fromReviews = false;
     sheet.ev = null;
     sheet.day = day;
     $("sheet-title").textContent = "Dinner";
@@ -513,8 +556,11 @@
     request(method, url, body, function (err) {
       setBusy(false);
       if (err) { showError(err.message); return; }
+      var back = sheet.fromReviews;
       closeSheet();
-      loadWeek();
+      loadWeek(function () {
+        if (back && state.reviews.length) openReviews();
+      });
     });
   }
 
@@ -541,7 +587,13 @@
   $("f-repeat").addEventListener("change", syncRepeat, false);
   $("f-ends").addEventListener("change", syncRepeat, false);
 
-  on($("b-cancel"), closeSheet);
+  on($("b-cancel"), function () {
+    // From an item opened off the review list, Cancel goes back to the list.
+    if (sheet.fromReviews) openReviews();
+    else closeSheet();
+  });
+
+  on($("review-btn"), openReviews);
 
   on($("sheet"), function (e) {
     if (e.target === $("sheet")) closeSheet();   // tap outside the box

@@ -167,7 +167,8 @@ inline_runner <- function(chat = ollama_chat) {
 
 # ---- Main loop -------------------------------------------------------------
 
-# Adds the events for one finished job. Returns the number added.
+# Adds the events for one finished job. Returns a short description of
+# each event added, e.g. "Hyrox Sim (Sat Oct 31, 12:30)".
 finish_import <- function(google, con, cfg, job, result) {
   input  <- job$input
   today  <- as.Date(job$today)
@@ -180,12 +181,16 @@ finish_import <- function(google, con, cfg, job, result) {
   v <- validate_events(parsed$events, cfg, today, as.Date(input$sent),
                        cfg$import$max_events)
   ids <- character()
+  added <- character()
   for (form in v$forms) {
     body <- event_body(clean_form(form, cfg), cfg)
     body$description <- import_description(form, input$subject, input$sender)
     body$extendedProperties <- list(private = list(moonrise_import = input$id))
     ev  <- event_insert(google, cfg, cfg$import$calendar, body)
     ids <- c(ids, ev$id)
+    added <- c(added, sprintf("%s (%s%s)", form$title,
+                              sub(" 0", " ", format(as.Date(form$date), "%a %b %d")),
+                              if (nzchar(form$start_time)) paste0(", ", form$start_time) else ""))
   }
   if (length(ids)) sync_calendar(google, con, cfg, cfg$import$calendar)
 
@@ -194,7 +199,7 @@ finish_import <- function(google, con, cfg, job, result) {
     events    = length(ids),
     event_ids = paste(ids, collapse = " "),
     note      = paste(c(result$notes, v$notes), collapse = " "))
-  length(ids)
+  added
 }
 
 # One step of the importer. Returns TRUE if there may be more to do soon.
@@ -209,11 +214,13 @@ import_tick <- function(google, con, cfg, state, runner, now = Sys.time()) {
     state$job <- NULL
     tryCatch({
       result <- job$handle$result()
-      n <- finish_import(google, con, cfg, job, result)
+      added <- finish_import(google, con, cfg, job, result)
+      n <- length(added)
       state$problem <- NULL
       moonrise_log("import: \"%s\" from %s: %s", job$input$subject,
                    job$input$sender,
-                   if (n) sprintf("added %d event%s for review", n, if (n == 1) "" else "s")
+                   if (n) sprintf("added %d event%s for review: %s", n, if (n == 1) "" else "s",
+                                  paste(added, collapse = "; "))
                    else "no events found")
     }, error = function(e) {
       msg <- conditionMessage(e)

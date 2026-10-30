@@ -70,6 +70,56 @@ store_version <- function(con) {
        errors     = as.integer(st$errors %||% 0))
 }
 
+# One event as the page needs it: what to show, plus the fields the edit
+# sheet fills in. `day_start` is the start of the day it is shown on; an
+# event that began before it shows "cont." instead of a time.
+event_item <- function(r, day_start, tz, now_ts) {
+  cont  <- r$all_day == 0 && r$start_ts < day_start
+  local <- function(ts, fmt) format(as.POSIXct(ts, origin = "1970-01-01", tz = tz), fmt)
+  edit <- if (r$all_day == 1) {
+    list(date = substr(r$start, 1, 10),
+         end_date = format(as.Date(substr(r$end, 1, 10)) - 1),
+         start_time = "", end_time = "")
+  } else {
+    list(date = local(r$start_ts, "%Y-%m-%d"),
+         end_date = local(r$end_ts, "%Y-%m-%d"),
+         start_time = local(r$start_ts, "%H:%M"),
+         end_time = local(r$end_ts, "%H:%M"))
+  }
+  c(list(
+    id       = r$id,
+    calendar = r$calendar,
+    repeats  = !is.na(r$recurring_id),
+    title    = r$title,
+    who      = r$who,
+    color    = r$color,
+    pending  = r$pending == 1,
+    all_day  = r$all_day == 1,
+    time     = if (r$all_day == 1) "" else if (cont) "cont." else clock_label(r$start_ts, tz),
+    location = r$location,
+    past     = r$end_ts <= now_ts
+  ), edit)
+}
+
+# Every event awaiting review that hasn't ended, whatever its date, so
+# imports for later weeks can be checked from the wall.
+review_items <- function(con, cfg, now = Sys.time()) {
+  tz <- cfg$tz
+  ev <- DBI::dbGetQuery(con, "
+    SELECT * FROM events WHERE pending = 1 AND end_ts > ? ORDER BY start_ts",
+    params = list(as.numeric(now)))
+  for (col in c("title", "who", "location")) ev[[col]][is.na(ev[[col]])] <- ""
+  ev$color <- event_colors(ev$who, cfg)
+  lapply(seq_len(nrow(ev)), function(i) {
+    r <- ev[i, ]
+    it <- event_item(r, r$start_ts, tz, as.numeric(now))
+    d <- as.Date(as.POSIXct(r$start_ts, origin = "1970-01-01", tz = tz), tz = tz)
+    it$when <- paste0(sub(" 0", " ", format(d, "%a %b %d")),
+                      if (nzchar(it$time)) paste0(", ", it$time) else "")
+    it
+  })
+}
+
 # The week view: `days` days from `start` (a Date), events bucketed by
 # local day. Multi-day events appear on every day they cover.
 week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
@@ -90,37 +140,7 @@ week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
     b <- bounds[k + 1]
     on <- ev[ev$start_ts < b & (ev$end_ts > a | ev$start_ts >= a), , drop = FALSE]
 
-    item <- function(r) {
-      cont <- r$all_day == 0 && r$start_ts < a
-      local <- function(ts, fmt) {
-        format(as.POSIXct(ts, origin = "1970-01-01", tz = tz), fmt)
-      }
-      edit <- if (r$all_day == 1) {
-        list(date = substr(r$start, 1, 10),
-             end_date = format(as.Date(substr(r$end, 1, 10)) - 1),
-             start_time = "", end_time = "")
-      } else {
-        list(date = local(r$start_ts, "%Y-%m-%d"),
-             end_date = local(r$end_ts, "%Y-%m-%d"),
-             start_time = local(r$start_ts, "%H:%M"),
-             end_time = local(r$end_ts, "%H:%M"))
-      }
-      c(list(
-        id       = r$id,
-        calendar = r$calendar,
-        repeats  = !is.na(r$recurring_id),
-        title    = r$title,
-        who      = r$who,
-        color    = r$color,
-        pending  = r$pending == 1,
-        all_day  = r$all_day == 1,
-        time     = if (r$all_day == 1) "" else if (cont) "cont." else
-                     clock_label(r$start_ts, tz),
-        location = r$location,
-        past     = r$end_ts <= now_ts
-      ), edit)
-    }
-    rows <- function(d) lapply(seq_len(nrow(d)), function(i) item(d[i, ]))
+    rows <- function(d) lapply(seq_len(nrow(d)), function(i) event_item(d[i, ], a, tz, now_ts))
 
     dinner <- on[on$calendar == "dinner", , drop = FALSE]
     fam    <- on[on$calendar != "dinner", , drop = FALSE]
@@ -144,6 +164,7 @@ week_payload <- function(con, cfg, start = NULL, days = 7, now = Sys.time()) {
     version = store_version(con)$version,
     people  = lapply(seq_len(nrow(people)), function(i) as.list(people[i, ])),
     groups  = cfg$group_colors,
-    days    = day_list
+    days    = day_list,
+    reviews = review_items(con, cfg, now)
   )
 }
