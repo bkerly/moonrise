@@ -54,7 +54,9 @@ token <- gargle2.0_token(
 
 # ---- Helpers ---------------------------------------------------------------
 
-google <- function(method, path, params = list(), body = list()) {
+# body = NULL sends no body. An empty list() would go out as "[]", which
+# Google rejects ("Root element must be a message").
+google <- function(method, path, params = list(), body = NULL) {
   req  <- request_build(method = method, path = path, params = params,
                         body = body, token = token)
   resp <- request_make(req)
@@ -126,23 +128,46 @@ for (nm in names(cfg$calendars)) {
 
 # ---- 2. Write test on the family calendar ---------------------------------
 
+test_title <- "? Moonrise test - delete me"
+family_id  <- cfg$calendars[["family"]]
+
+delete_event <- function(event_id) {
+  google("DELETE", "calendar/v3/calendars/{calendarId}/events/{eventId}",
+         params = list(calendarId = family_id, eventId = event_id))
+}
+
 if (write_test) {
   check(
     "write to family calendar",
     {
+      # Remove test events left behind by an earlier run that failed midway.
+      old <- google("GET", "calendar/v3/calendars/{calendarId}/events", params = list(
+        calendarId   = family_id,
+        q            = "Moonrise test",
+        timeMin      = rfc3339(now - 7 * 24 * 3600),
+        timeMax      = rfc3339(now + 7 * 24 * 3600),
+        singleEvents = "true"
+      ))$items %||% list()
+      old <- Filter(function(e) identical(e$summary, test_title), old)
+      for (e in old) delete_event(e$id)
+      if (length(old)) {
+        cat(sprintf("      removed %d leftover test event(s)\n", length(old)))
+      }
+
       start <- now + 3600
       ev <- google("POST", "calendar/v3/calendars/{calendarId}/events",
-        params = list(calendarId = cfg$calendars[["family"]]),
+        params = list(calendarId = family_id),
         body = list(
-          summary = "? Moonrise test - delete me",
+          summary = test_title,
           start   = list(dateTime = rfc3339(start)),
           end     = list(dateTime = rfc3339(start + 15 * 60))
         )
       )
-      google("DELETE", "calendar/v3/calendars/{calendarId}/events/{eventId}",
-        params = list(calendarId = cfg$calendars[["family"]], eventId = ev$id))
+      cat("      created test event\n")
+      delete_event(ev$id)
+      cat("      deleted test event\n")
     },
-    "The share needs 'Make changes to events', not 'See all event details'."
+    "A 403 means the share needs 'Make changes to events'."
   )
 }
 
