@@ -76,7 +76,7 @@ store_replace_events <- function(con, calendar, rows) {
   rows <- rows[order(rows$start_ts, rows$id), , drop = FALSE]
   hash <- rlang::hash(rows)
   st   <- store_state(con, calendar)
-  if (identical(st$data_hash, hash)) return(FALSE)
+  if (identical(st$data_hash, hash)) return(invisible(FALSE))
 
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "DELETE FROM events WHERE calendar = ?",
@@ -86,7 +86,7 @@ store_replace_events <- function(con, calendar, rows) {
       UPDATE sync_state SET data_hash = ?, version = version + 1
       WHERE calendar = ?", params = list(hash, calendar))
   })
-  TRUE
+  invisible(TRUE)
 }
 
 # Events overlapping [from, to), for any calendar.

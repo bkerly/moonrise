@@ -15,7 +15,8 @@
 # which Google no longer allows for Desktop clients.
 
 pkgs    <- c("gargle", "httr", "httpuv", "jsonlite",   # Google sign-in
-             "DBI", "RSQLite", "later", "rlang")       # sync loop
+             "DBI", "RSQLite", "later", "rlang",       # sync loop
+             "plumber")                                # wall page server
 missing <- setdiff(pkgs, rownames(installed.packages()))
 if (length(missing)) {
   install.packages(missing, repos = "https://cloud.r-project.org")

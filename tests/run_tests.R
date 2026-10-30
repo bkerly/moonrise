@@ -279,6 +279,99 @@ test("store survives reopening", {
 })
 
 DBI::dbDisconnect(con)
+
+# ---- Wall: colors ----------------------------------------------------------
+
+wcfg <- cfg
+wcfg$adults <- c("B", "K")
+wcfg$colors <- list(V = "#123456")
+
+test("people get config colors, then Okabe-Ito in order", {
+  p <- wall_people(wcfg)
+  expect_equal(p$initial, c("B", "K", "V", "N", "A"))
+  expect_equal(p$color, c("#0072B2", "#D55E00", "#123456", "#CC79A7", "#E69F00"))
+  expect_equal(p$adult, c(TRUE, TRUE, FALSE, FALSE, FALSE))
+})
+
+test("color rules: children decide", {
+  g <- wcfg$group_colors
+  got <- event_colors(c("V", "V B", "V N", "N A K", "B", "B K", "F", "F V", "", "Q"), wcfg)
+  expect_equal(got, c("#123456", "#123456", g$children, g$children,
+                      "#0072B2", g$family, g$family, g$family, g$none, g$none))
+})
+
+# ---- Wall: week ------------------------------------------------------------
+
+wcfg$data_dir <- file.path(tmp, "wall")
+wcon <- store_open(wcfg)
+tz   <- wcfg$tz
+lt   <- function(s) format(as.POSIXct(s, tz = tz), "%Y-%m-%dT%H:%M:%S%z")
+item <- function(id, title, from, to) {
+  list(id = id, status = "confirmed", summary = title,
+       start = list(dateTime = lt(from)), end = list(dateTime = lt(to)))
+}
+day_item <- function(id, title, from, to) {
+  list(id = id, status = "confirmed", summary = title,
+       start = list(date = from), end = list(date = to))
+}
+store_replace_events(wcon, "family", event_rows(list(
+  item("a", "V - Swim", "2026-10-31 08:00", "2026-10-31 09:00"),
+  item("b", "B K - Late party", "2026-10-31 22:00", "2026-11-01 01:00"),
+  day_item("c", "F - Grandma", "2026-11-01", "2026-11-03"),
+  item("d", "N - After DST", "2026-11-01 15:30", "2026-11-01 16:00"),
+  item("e", "? Field trip", "2026-11-02 09:00", "2026-11-02 12:00"),
+  item("z", "Outside week", "2026-11-12 09:00", "2026-11-12 10:00")
+), wcfg))
+store_replace_events(wcon, "dinner", event_rows(list(
+  day_item("d1", "Tacos", "2026-10-31", "2026-11-01")
+), wcfg))
+
+wk <- week_payload(wcon, wcfg, start = as.Date("2026-10-31"),
+                   now = as.POSIXct("2026-10-31 12:00", tz = tz))
+ids <- function(k) vapply(wk$days[[k]]$events, `[[`, "", "id")
+
+test("week: seven days, today flagged, heading", {
+  expect_equal(length(wk$days), 7)
+  expect_equal(wk$days[[1]]$date, "2026-10-31")
+  expect_equal(wk$days[[1]]$today, TRUE)
+  expect_equal(wk$days[[2]]$today, FALSE)
+  expect_equal(wk$heading, "Saturday, October 31")
+})
+
+test("week: events land on the right days", {
+  expect_equal(ids(1), c("a", "b"))
+  expect_equal(ids(2), c("c", "b", "d"))   # all-day first, then by time
+  expect_equal(ids(3), c("c", "e"))
+  expect_equal(ids(4), character())
+  expect_equal(wk$days[[1]]$dinner, list("Tacos"))
+  expect_equal(wk$days[[2]]$dinner, list())
+})
+
+test("week: labels, past, pending, colors", {
+  d1 <- wk$days[[1]]$events
+  d2 <- wk$days[[2]]$events
+  expect_equal(d1[[1]]$time, "8:00 AM")
+  expect_equal(d1[[1]]$past, TRUE)
+  expect_equal(d1[[2]]$past, FALSE)
+  expect_equal(d1[[2]]$color, wcfg$group_colors$family)
+  expect_equal(d2[[2]]$time, "cont.")        # party runs past midnight
+  expect_equal(d2[[3]]$time, "3:30 PM")      # day after DST ends
+  expect_equal(d2[[1]]$time, "")
+  e <- wk$days[[3]]$events[[2]]
+  expect_equal(e$pending, TRUE)
+  expect_equal(e$color, wcfg$group_colors$none)
+})
+
+test("week: DST day is 25 hours", {
+  b <- day_starts(as.Date(c("2026-11-01", "2026-11-02")), tz)
+  expect_equal(diff(b), 25 * 3600)
+})
+
+test("week: version counts all calendars", {
+  expect_equal(wk$version, 2)
+})
+
+DBI::dbDisconnect(wcon)
 unlink(tmp, recursive = TRUE)
 
 cat(sprintf("\n%d passed, %d failed\n", passed, failed))

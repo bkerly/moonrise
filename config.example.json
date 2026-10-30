@@ -17,5 +17,13 @@
     "V": "Child One",
     "N": "Child Two",
     "A": "Child Three"
+  },
+  "adults": ["B", "K"],
+  "colors": {
+    "B": "#0072B2",
+    "K": "#D55E00",
+    "V": "#009E73",
+    "N": "#CC79A7",
+    "A": "#E69F00"
   }
 }

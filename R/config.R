@@ -20,6 +20,17 @@ moonrise_config <- function(path = Sys.getenv("MOONRISE_CONFIG",
     data_dir    = "~/.local/share/moonrise",
     tz          = "America/Denver",
     family      = list(),
+    adults      = character(),   # initials of the adults, e.g. ["B", "K"]
+    colors      = list(),        # per initial; unlisted ones get Okabe-Ito
+    group_colors = list(
+      children = "#56B4E9",      # two or more children
+      family   = "#000000",      # F, or all adults
+      none     = "#8A8A8A"       # no initials
+    ),
+    server      = list(
+      host = "0.0.0.0",          # listen on the home network
+      port = 8080
+    ),
     sync        = list(
       every_seconds   = 60,   # how often to check for changes
       refresh_minutes = 60,   # full window refresh even with no changes
