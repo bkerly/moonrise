@@ -1,16 +1,24 @@
 /* Moonrise wall page.
+   Two typefaces: DM Serif Display for the date heading and sheet title,
+   DM Sans for everything else, form fields included.
    Written for old Android WebViews (the Fire tablet): flexbox only,
    no CSS grid, no CSS variables. Sized for about 1024 x 600. */
 
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/wall/fonts/atkinson-hyperlegible-latin-400-normal.woff2") format("woff2");
+  font-family: "DM Sans";
+  src: url("/wall/fonts/dm-sans-latin-400-normal.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
 }
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/wall/fonts/atkinson-hyperlegible-latin-700-normal.woff2") format("woff2");
+  font-family: "DM Sans";
+  src: url("/wall/fonts/dm-sans-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "DM Sans";
+  src: url("/wall/fonts/dm-sans-latin-700-normal.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
 }
@@ -23,6 +31,11 @@
 
 * { box-sizing: border-box; }
 
+/* Form fields and buttons don't inherit the page font on their own. */
+input, button, select, textarea {
+  font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
 html, body {
   margin: 0;
   height: 100%;
@@ -31,7 +44,7 @@ html, body {
 body {
   background: #F4F1EA;
   color: #1D1B18;
-  font-family: "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif;
+  font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: 15px;
   line-height: 1.25;
   display: -webkit-box;
@@ -207,6 +220,7 @@ body {
 .ev-title {
   display: block;
   font-size: 15px;
+  font-weight: 500;
   word-wrap: break-word;
 }
 

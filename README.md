@@ -153,8 +153,10 @@ Settings in `config.json`, shown with their defaults:
             "max_events": 15, "ocr": true, "calendar": "family" }
 ```
 
-Fonts are Atkinson Hyperlegible and DM Serif Display (SIL Open Font
-License), served from `www/fonts` so the tablet needs no internet.
+Two typefaces from one family: DM Serif Display for the date heading and
+the edit sheet's title, DM Sans for everything else, form fields
+included. Both are under the SIL Open Font License and served from
+`www/fonts`, so the tablet needs no internet.
 
 The icon (`www/icons/favicon.svg`, a crescent rising over an orange
 horizon) has PNG copies for older browsers and phone home screens. To

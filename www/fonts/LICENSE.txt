@@ -1,15 +1,8 @@
-Atkinson Hyperlegible: Copyright 2020 Braille Institute of America, Inc.
+DM Sans: Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts).
 DM Serif Display: Copyright 2014-2017 Adobe Systems Incorporated, with Reserved Font Name "Source". Copyright 2019 Google LLC.
 
 Both are licensed under the SIL Open Font License 1.1.
-Files from the Fontsource npm packages (v5.0.20).
-
-Copyright 2020 Braille Institute of America, Inc.
-
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-http://scripts.sil.org/OFL
-
+Files from the Fontsource npm packages (@fontsource/dm-sans 5.0.21, @fontsource/dm-serif-display 5.0.20).
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
