@@ -129,11 +129,13 @@ fake_email <- function(from, subject, text = NULL, html = NULL,
   }
   body_parts <- c(if (!is.null(text)) list(part("text/plain", text)),
                   if (!is.null(html)) list(part("text/html", html)))
+  # Attachment ids must be unique across all fake emails.
+  att_ids <- vapply(attachments, function(a) paste0("att_", rlang::hash(a$raw)), "")
   att_parts <- lapply(seq_along(attachments), function(i) {
     a <- attachments[[i]]
     list(mimeType = a$mime, filename = a$filename, headers = list(),
          body = list(size = a$size %||% length(a$raw),
-                     attachmentId = paste0("att", i)))
+                     attachmentId = att_ids[i]))
   })
   list(
     internalDate = format(round(as.numeric(sent) * 1000), scientific = FALSE),
@@ -145,7 +147,7 @@ fake_email <- function(from, subject, text = NULL, html = NULL,
     ),
     attachments_data = lapply(seq_along(attachments), function(i) {
       b <- jsonlite::base64_enc(attachments[[i]]$raw)
-      list(id = paste0("att", i),
+      list(id = att_ids[i],
            data = gsub("=+$", "", chartr("+/", "-_", gsub("\n", "", b))))
     })
   )
