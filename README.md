@@ -24,6 +24,8 @@ R/ollama.R             calls the local Ollama model
 R/import.R             email import loop
 www/                   the wall page (plain ES5 + flexbox for old tablets)
 scripts/setup_mac.R    one-time setup on a Mac
+scripts/setup_mint.sh  one-time setup of the server on Linux Mint
+deploy/moonrise.service  systemd service (setup_mint.sh fills it in)
 scripts/smoke_test.R   checks sign-in, calendar read/write, inbox read
 scripts/sync_once.R    one sync pass, then prints the next 7 days
 scripts/sync_loop.R    syncs every minute until stopped (no web server)
@@ -198,11 +200,132 @@ Rscript tests/run_tests.R
 
 ## Setup on Linux Mint (the server)
 
+The server is a 2008 MacBook Air running Linux Mint 21 or 22, on the home
+Wi-Fi, lid closed. It runs one process under systemd: sync, email import
+and the wall page.
+
+### 1. Run the setup script
+
+On the Air, in a terminal:
+
 ```sh
-sudo apt install r-cran-gargle r-cran-httr r-cran-httpuv r-cran-jsonlite \
-  r-cran-dbi r-cran-rsqlite r-cran-later r-cran-rlang r-cran-plumber \
-  r-cran-callr r-cran-xml2 r-cran-pdftools r-cran-tesseract
+git clone https://github.com/bkerly/moonrise.git ~/moonrise
+cd ~/moonrise
+bash scripts/setup_mint.sh
 ```
 
-Then copy `~/.config/moonrise/` from the Mac, or put the two files in place
-by hand and sign in again.
+It asks for your password for the sudo steps, and once for the Wi-Fi
+password if the network was saved for your login only. It:
+
+1. installs R and the packages from [r2u](https://github.com/eddelbuettel/r2u)
+   (CRAN binaries for Ubuntu; Mint 21 is jammy, Mint 22 is noble)
+2. turns on SSH, so the Pro can copy files over
+3. makes `~/.config/moonrise` and `~/.local/share/moonrise`
+4. ignores the lid and turns sleep off
+   ([logind.conf](https://www.freedesktop.org/software/systemd/man/255/logind.conf.html))
+5. turns off Wi-Fi power saving, and makes the Wi-Fi connect at boot
+   without anyone logging in
+6. opens the wall page port (and SSH) to the home network, if the
+   firewall is on
+7. installs and enables the `moonrise` service
+
+It is safe to run again. Reboot once afterwards.
+
+In the router, reserve the Air's address (the script prints it) so the
+wall page address never changes.
+
+### 2. Move the server from the Pro
+
+Only one server may run at a time: two would import the same emails
+twice. On the Pro, stop the server (Ctrl-C), then copy the private files
+and the local store:
+
+```sh
+scp -r ~/.config/moonrise/config.json ~/.config/moonrise/client_secret.json \
+  ~/.config/moonrise/tokens  AIR_USER@AIR_ADDRESS:.config/moonrise/
+scp ~/.local/share/moonrise/moonrise.sqlite  AIR_USER@AIR_ADDRESS:.local/share/moonrise/
+```
+
+The token works on the Air as is: same account, same client. The store
+carries the list of emails already imported, so nothing is imported
+twice. (Without it the Air rebuilds the calendar copy on its first sync,
+but would read the last 3 days of email again.)
+
+Then on the Air, set where the email import finds its model (next
+section), and start the server:
+
+```sh
+sudo systemctl start moonrise
+journalctl -u moonrise -f      # follow the log; Ctrl-C stops following
+```
+
+### 3. Where the model runs
+
+The Air has 2 GB of RAM and a Core 2 Duo, too small for `qwen3.5:4b`.
+Two choices:
+
+- **Ollama on the Pro, over Wi-Fi** (start here). In the Air's
+  `config.json`:
+
+  ```json
+  "import": { "ollama_url": "http://PRO_ADDRESS:11434" }
+  ```
+
+  On the Pro, Ollama listens only to the Pro itself until told otherwise
+  ([Ollama FAQ](https://docs.ollama.com/faq)):
+
+  ```sh
+  launchctl setenv OLLAMA_HOST "0.0.0.0:11434"
+  ```
+
+  then quit and reopen the Ollama app, and allow incoming connections if
+  macOS asks. The setting lasts until the Pro restarts. Reserve the Pro's
+  address in the router too.
+
+  While the Pro is asleep or away, emails wait and go through when it is
+  back. The inbox check only looks back `lookback_days` (3), so an email
+  that waits longer than that is skipped; raise it if the Pro is often
+  away.
+
+- **Import off**: `"import": { "enabled": false }`. The wall still syncs
+  and edits.
+
+Running Ollama on the Air itself is untested. Ollama's docs list no CPU
+requirements, the Core 2 Duo lacks the AVX instructions most builds
+expect, and even `qwen3.5:0.8b` (1.2 GB) leaves little room in 2 GB.
+
+### 4. Day to day
+
+```sh
+sudo systemctl status moonrise     # running?
+journalctl -u moonrise -f          # log
+cd ~/moonrise && git pull && sudo systemctl restart moonrise   # update
+```
+
+A config change also needs `sudo systemctl restart moonrise`. The
+service restarts itself 15 seconds after a crash, and starts at boot.
+
+From the Pro, `ssh AIR_USER@AIR_ADDRESS` reaches the Air with the lid
+closed.
+
+## Wall tablet and phones
+
+The wall page is `http://AIR_ADDRESS:8080/` from any device on the home
+Wi-Fi. It needs no sign-in, so keep guests on the guest network.
+
+**Fire tablet**, in Fully Kiosk Browser's settings
+([feature list](https://www.fully-kiosk.com/docs/en/features/all)):
+
+- Start URL: the wall page address
+- Keep screen on
+- Autostart on boot
+- Web Auto Reload: reload when the network reconnects and on page load
+  errors, so the page comes back after a Wi-Fi drop or a server restart
+
+None of these need the paid PLUS license. Kiosk mode does, and isn't
+needed.
+
+**Phones**: open the address in Chrome, then menu > **Add to Home
+screen**. Since the page is plain HTTP, the icon opens it in Chrome
+rather than as a stand-alone app. The page stacks the days on a narrow
+screen.

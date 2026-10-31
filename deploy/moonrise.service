@@ -1,0 +1,23 @@
+# Moonrise server under systemd. scripts/setup_mint.sh fills in the @...@
+# values and installs this as /etc/systemd/system/moonrise.service.
+#
+#   sudo systemctl status moonrise       is it running?
+#   journalctl -u moonrise -f            follow the log
+#   sudo systemctl restart moonrise      after git pull or a config change
+
+[Unit]
+Description=Moonrise family calendar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Environment=HOME=@HOME@
+WorkingDirectory=@REPO@
+ExecStart=@RSCRIPT@ scripts/server.R
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

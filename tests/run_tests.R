@@ -775,6 +775,21 @@ test("import: when Ollama is back, the waiting email goes through", {
   expect_equal(im$status[im$subject == "Later"], "added")
 })
 
+# On the Air, Ollama may run on the Pro over Wi-Fi. When the Pro is asleep
+# or away, the call must fail within seconds as "not reachable", so the
+# email waits instead of using up its 3 tries.
+test("ollama: a closed port or an address that never answers is 'not reachable'", {
+  for (u in c(sprintf("http://127.0.0.1:%d", httpuv::randomPort()),
+              "http://10.255.255.1:11434")) {
+    t0 <- Sys.time()
+    msg <- tryCatch({ ollama_post(list(), list(ollama_url = u, timeout_seconds = 600)); "" },
+                    error = conditionMessage)
+    secs <- as.numeric(Sys.time() - t0, units = "secs")
+    if (!grepl(ollama_unreachable, msg, fixed = TRUE)) stop(u, ": ", msg)
+    if (secs > 30) stop(u, " took ", round(secs), " s")
+  }
+})
+
 test("import: PDF attachment text reaches the model", {
   pdf_path <- file.path(tmp, "flyer.pdf")
   grDevices::pdf(pdf_path)
