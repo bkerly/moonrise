@@ -7,6 +7,8 @@
 #
 # Run as your normal user (not root), from the repo folder:
 #   bash scripts/setup_mint.sh
+#   bash scripts/setup_mint.sh --no-desktop   also boot to a text console,
+#                                             leaving more memory for the model
 # It asks for your password for the steps that need sudo. Safe to run
 # again; each step checks what is already done.
 #
@@ -17,17 +19,28 @@
 #   4. keeps the laptop awake: lid close ignored, sleep turned off
 #   5. Wi-Fi: power saving off, and connects at boot without a login
 #   6. opens the wall page port to the home network if the firewall is on
-#   7. the moonrise systemd service, started at boot
+#   7. Ollama and the email import model (qwen3.5:0.8b), tried once
+#   8. the moonrise systemd service, started at boot
 #
 # Sources:
 #   r2u:     https://github.com/eddelbuettel/r2u
 #   logind:  https://www.freedesktop.org/software/systemd/man/255/logind.conf.html
+#   Ollama:  https://docs.ollama.com/linux.md, https://docs.ollama.com/faq
 
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 user="$(id -un)"
 home="$HOME"
+model="${MOONRISE_MODEL:-qwen3.5:0.8b}"
+
+no_desktop=false
+for a in "$@"; do
+  case "$a" in
+    --no-desktop) no_desktop=true ;;
+    *) echo "Unknown option: $a"; exit 1 ;;
+  esac
+done
 
 step() { printf '\n== %s\n' "$*"; }
 note() { printf '   %s\n' "$*"; }
@@ -195,9 +208,49 @@ else
   note "firewall is off; nothing to open"
 fi
 
-# ---- 7. Service -------------------------------------------------------------
+# ---- 7. Ollama ---------------------------------------------------------------
 
-step "7. moonrise service"
+step "7. Ollama and $model"
+if grep -qw avx /proc/cpuinfo; then
+  note "CPU has AVX"
+else
+  note "CPU has no AVX. Ollama may be slow here or may not run; the test below shows which."
+fi
+
+if ! command -v ollama >/dev/null; then
+  curl -fsSL https://ollama.com/install.sh | sh
+fi
+
+# One model, one request at a time, a 4096-token context: the least
+# memory Ollama will use. It still listens only to this laptop.
+sudo install -d /etc/systemd/system/ollama.service.d
+sudo tee /etc/systemd/system/ollama.service.d/10-moonrise.conf >/dev/null <<EOF
+[Service]
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_NUM_PARALLEL=1"
+Environment="OLLAMA_CONTEXT_LENGTH=4096"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable ollama >/dev/null
+sudo systemctl restart ollama
+for _ in $(seq 30); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+
+ollama pull "$model"
+note "Trying $model on a sample email (slow on this laptop; up to 30 minutes)..."
+if (cd "$repo" && timeout 1800 Rscript scripts/try_model.R "$model"); then
+  note "The model runs. Put the import settings from the README in config.json."
+else
+  note "The model did not answer. See: journalctl -u ollama -e"
+fi
+
+if $no_desktop; then
+  sudo systemctl set-default multi-user.target >/dev/null
+  note "Boots to a text console from now on (undo: sudo systemctl set-default graphical.target)."
+fi
+
+# ---- 8. Service -------------------------------------------------------------
+
+step "8. moonrise service"
 rscript="$(command -v Rscript)"
 sed -e "s|@USER@|$user|" -e "s|@HOME@|$home|" -e "s|@REPO@|$repo|" \
     -e "s|@RSCRIPT@|$rscript|" "$repo/deploy/moonrise.service" \

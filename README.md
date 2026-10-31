@@ -25,6 +25,7 @@ R/import.R             email import loop
 www/                   the wall page (plain ES5 + flexbox for old tablets)
 scripts/setup_mac.R    one-time setup on a Mac
 scripts/setup_mint.sh  one-time setup of the server on Linux Mint
+scripts/try_model.R    times one sample email through the import model
 deploy/moonrise.service  systemd service (setup_mint.sh fills it in)
 scripts/smoke_test.R   checks sign-in, calendar read/write, inbox read
 scripts/sync_once.R    one sync pass, then prints the next 7 days
@@ -227,7 +228,8 @@ password if the network was saved for your login only. It:
    without anyone logging in
 6. opens the wall page port (and SSH) to the home network, if the
    firewall is on
-7. installs and enables the `moonrise` service
+7. installs Ollama and `qwen3.5:0.8b`, and tries it on a sample email
+8. installs and enables the `moonrise` service
 
 It is safe to run again. Reboot once afterwards.
 
@@ -251,7 +253,7 @@ carries the list of emails already imported, so nothing is imported
 twice. (Without it the Air rebuilds the calendar copy on its first sync,
 but would read the last 3 days of email again.)
 
-Then on the Air, set where the email import finds its model (next
+Then on the Air, set the import settings for the small model (next
 section), and start the server:
 
 ```sh
@@ -259,40 +261,45 @@ sudo systemctl start moonrise
 journalctl -u moonrise -f      # follow the log; Ctrl-C stops following
 ```
 
-### 3. Where the model runs
+### 3. The model on the Air
 
-The Air has 2 GB of RAM and a Core 2 Duo, too small for `qwen3.5:4b`.
-Two choices:
+Email import runs `qwen3.5:0.8b` (1.2 GB) in Ollama on the Air itself,
+so it works with the Pro off. The setup script installs Ollama, limits
+it to one model and one request at a time with a 4096-token context
+(the least memory), pulls the model, and tries it on a sample email.
+The Air is slow, so expect minutes per email, not seconds.
 
-- **Ollama on the Pro, over Wi-Fi** (start here). In the Air's
-  `config.json`:
+In the Air's `config.json`:
 
-  ```json
-  "import": { "ollama_url": "http://PRO_ADDRESS:11434" }
-  ```
+```json
+"import": { "model": "qwen3.5:0.8b", "vision": false, "timeout_seconds": 1800 }
+```
 
-  On the Pro, Ollama listens only to the Pro itself until told otherwise
-  ([Ollama FAQ](https://docs.ollama.com/faq)):
+- `vision: false` sends photos through OCR (tesseract) instead of the
+  model, since reading an image costs a small CPU far more than reading
+  text.
+- `timeout_seconds: 1800` gives each email up to 30 minutes.
 
-  ```sh
-  launchctl setenv OLLAMA_HOST "0.0.0.0:11434"
-  ```
+To try the model again, or another one:
 
-  then quit and reopen the Ollama app, and allow incoming connections if
-  macOS asks. The setting lasts until the Pro restarts. Reserve the Pro's
-  address in the router too.
+```sh
+cd ~/moonrise && Rscript scripts/try_model.R qwen3.5:0.8b
+```
 
-  While the Pro is asleep or away, emails wait and go through when it is
-  back. The inbox check only looks back `lookback_days` (3), so an email
-  that waits longer than that is skipped; raise it if the Pro is often
-  away.
+It prints the time taken and the events found for the "hyrox sim this
+saturday at 1230pm" email (right answer: Saturday Oct 31, 12:30, B).
 
-- **Import off**: `"import": { "enabled": false }`. The wall still syncs
-  and edits.
+The Air's Core 2 Duo has no AVX, and Ollama's docs list no CPU
+requirements, so whether it runs at all is only known after trying.
+If it doesn't, the fallback is Ollama on the Pro
+(`"ollama_url": "http://PRO_ADDRESS:11434"`, and on the Pro
+`launchctl setenv OLLAMA_HOST "0.0.0.0:11434"`, per the
+[Ollama FAQ](https://docs.ollama.com/faq)); emails then wait while the
+Pro is off.
 
-Running Ollama on the Air itself is untested. Ollama's docs list no CPU
-requirements, the Core 2 Duo lacks the AVX instructions most builds
-expect, and even `qwen3.5:0.8b` (1.2 GB) leaves little room in 2 GB.
+Memory is tight with the desktop running. `bash scripts/setup_mint.sh
+--no-desktop` makes the Air boot to a text console, leaving the
+desktop's memory to the model; SSH from the Pro still works.
 
 ### 4. Day to day
 

@@ -8,7 +8,7 @@
 [Unit]
 Description=Moonrise family calendar
 Wants=network-online.target
-After=network-online.target
+After=network-online.target ollama.service
 
 [Service]
 Type=simple
